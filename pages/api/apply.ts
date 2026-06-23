@@ -1,4 +1,4 @@
-import { NextApiRequest, NextApiResponse } from 'next'
+import { evaluateTrial } from '@/lib/ai'                  import { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 
@@ -56,7 +56,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         status: 'PENDING',
       },
     })
+    const aiResult = await evaluateTrial({
+      strengths, whyJoin, skills, availability, age: parseInt(ageValue),
+    }).catch(() => null)
 
+    if (aiResult) {
+      await prisma.trial.update({
+        where: { userId: existingByEmail ? existingByEmail.id : user.id },
+        data: {
+          aiScore: aiResult.score,
+          aiSummary: aiResult.summary,
+          aiRecommendation: aiResult.recommendation,
+          status: 'UNDER_REVIEW',
+        },
+      })
+    }                                        
+    
     await prisma.activityLog.create({
       data: { userId: existingByEmail.id, action: 'APPLIED', details: 'Trial linked to existing account' },
     })

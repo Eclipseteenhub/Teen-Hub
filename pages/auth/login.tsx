@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { signIn } from 'next-auth/react'
+import { signIn, getSession } from 'next-auth/react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import Head from 'next/head'
@@ -28,6 +28,16 @@ export default function LoginPage() {
 
     if (res?.error) {
       setError('Invalid credentials or account suspended.')
+      return
+    }
+
+    const session = await getSession()
+    const role = (session?.user as any)?.role
+
+    if (role === 'FOUNDER') {
+      router.push('/founder')
+    } else if (['ADMIN', 'MODERATOR', 'COORDINATOR'].includes(role)) {
+      router.push('/admin')
     } else {
       router.push('/dashboard')
     }

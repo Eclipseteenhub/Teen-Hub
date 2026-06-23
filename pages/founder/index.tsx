@@ -8,7 +8,14 @@ import StatusChip from '@/components/ui/StatusChip'
 import { GlowInput, GlowTextarea } from '@/components/ui/GlowInput'
 import GlowButton from '@/components/ui/GlowButton'
 
-const TABS = ['Users','Quests','Trials','Admins','Arena','Achievements','Titles','Trust','Posts','AI Alerts','Feedback','Feature Unlock','Payouts','Settings']
+const TAB_GROUPS = [
+  { label: 'Command', tabs: ['Overview'] },
+  { label: 'People', tabs: ['Users', 'Trials', 'Admins'] },
+  { label: 'Content', tabs: ['Quests', 'Arena', 'Posts', 'Achievements', 'Titles'] },
+  { label: 'Trust & Safety', tabs: ['Trust', 'AI Alerts', 'Feedback'] },
+  { label: 'Operations', tabs: ['Feature Unlock', 'Payouts', 'Settings'] },
+]
+const ALL_TABS = TAB_GROUPS.flatMap(g => g.tabs)
 
 const RANK_COLORS: Record<string, string> = {
   F:'text-slate-400',E:'text-green-400',D:'text-blue-400',C:'text-yellow-400',
@@ -16,7 +23,7 @@ const RANK_COLORS: Record<string, string> = {
 }
 
 export default function FounderDashboard() {
-  const [tab, setTab] = useState('Users')
+  const [tab, setTab] = useState('Overview')
   const [stats, setStats] = useState<any>(null)
   const [users, setUsers] = useState<any[]>([])
   const [quests, setQuests] = useState<any[]>([])
@@ -30,6 +37,8 @@ export default function FounderDashboard() {
   const [feedbacks, setFeedbacks] = useState<any[]>([])
   const [unlocks, setUnlocks] = useState<any[]>([])
   const [features, setFeatures] = useState<any[]>([])
+  const [alerts, setAlerts] = useState<any>({ flaggedChat: [], flaggedDMs: [], unresolvedReports: [], recentWarnings: [], riskyUsers: [] })
+  const [payouts, setPayouts] = useState<any>({ quests: [], totalPending: 0, totalPaid: 0, pendingCount: 0, paidCount: 0 })
   const [loading, setLoading] = useState(true)
   const [actionMsg, setActionMsg] = useState('')
   const [aiEvalId, setAiEvalId] = useState('')
@@ -73,7 +82,7 @@ export default function FounderDashboard() {
 
   async function loadAll() {
     setLoading(true)
-    const [s,u,q,t,a,ar,ach,ti,po,fb,fu] = await Promise.all([
+    const [s,u,q,t,a,ar,ach,ti,po,fb,fu,al,pay] = await Promise.all([
       fetch('/api/founder/stats').then(r=>r.json()).catch(()=>({})),
       fetch('/api/founder/users').then(r=>r.json()).catch(()=>({users:[]})),
       fetch('/api/founder/quests').then(r=>r.json()).catch(()=>({quests:[]})),
@@ -85,6 +94,8 @@ export default function FounderDashboard() {
       fetch('/api/posts').then(r=>r.json()).catch(()=>({posts:[]})),
       fetch('/api/feedback').then(r=>r.json()).catch(()=>({feedbacks:[]})),
       fetch('/api/founder/feature-unlock').then(r=>r.json()).catch(()=>({unlocks:[],features:[]})),
+      fetch('/api/founder/alerts').then(r=>r.json()).catch(()=>({flaggedChat:[],flaggedDMs:[],unresolvedReports:[],recentWarnings:[],riskyUsers:[]})),
+      fetch('/api/founder/payouts').then(r=>r.json()).catch(()=>({quests:[],totalPending:0,totalPaid:0,pendingCount:0,paidCount:0})),
     ])
     setStats(s)
     setUsers(u.users || [])
@@ -99,6 +110,8 @@ export default function FounderDashboard() {
     setFeedbacks(fb.feedbacks || [])
     setUnlocks(fu.unlocks || [])
     setFeatures(fu.features || [])
+    setAlerts(al || {})
+    setPayouts(pay || {})
     setLoading(false)
   }
 
@@ -114,6 +127,35 @@ export default function FounderDashboard() {
       body: JSON.stringify({ action, value }),
     })
     msg(`User ${action} applied.`)
+    loadAll()
+  }
+
+  async function deleteUser(id: string, name: string) {
+    if (!window.confirm(`Permanently delete ${name}? This removes their account and all related activity. This cannot be undone.`)) return
+    const res = await fetch(`/api/founder/user/${id}`, { method: 'DELETE' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) { msg(`Error: ${data.error || 'Could not delete user.'}`); return }
+    msg('User deleted.')
+    loadAll()
+  }
+
+  async function resolveReport(id: string) {
+    await fetch('/api/admin/reports', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, resolved: true }),
+    })
+    msg('Report resolved.')
+    loadAll()
+  }
+
+  async function setPayoutStatus(id: string, status: 'PENDING' | 'PAID') {
+    await fetch('/api/founder/payouts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status }),
+    })
+    msg(status === 'PAID' ? 'Marked as paid.' : 'Reverted to pending.')
     loadAll()
   }
 
@@ -273,16 +315,27 @@ export default function FounderDashboard() {
                   <div className="font-orbitron text-[10px] text-amber-400/70 tracking-[0.4em] uppercase">Founder Access</div>
                   <h1 className="font-orbitron font-black text-xl text-white tracking-widest">WAR ROOM</h1>
                 </div>
+                {(stats?.unresolvedReports > 0 || stats?.riskyUserCount > 0) && (
+                  <button onClick={() => setTab('AI Alerts')} className="flex items-center gap-1.5 ml-1 border border-red-500/40 bg-red-900/15 px-2 py-1 hover:bg-red-900/25 transition-all">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                    <span className="font-orbitron text-[9px] text-red-400 tracking-widest">
+                      {(stats?.unresolvedReports || 0) + (stats?.riskyUserCount || 0)} ALERTS
+                    </span>
+                  </button>
+                )}
               </div>
               {stats && (
                 <div className="flex flex-wrap gap-4 sm:ml-auto">
                   {[
                     { label:'Total Users', value: stats.totalUsers || 0 },
-                    { label:'Active Quests', value: stats.activeQuests || 0 },
+                    { label:'Active', value: stats.activeUsers || 0, color:'text-green-400' },
+                    { label:'Open Quests', value: stats.openQuests || 0 },
                     { label:'Pending Trials', value: stats.pendingTrials || 0 },
-                  ].map(({label,value}) => (
+                    { label:'Flags', value: stats.flaggedTotal || 0, color: stats.flaggedTotal > 0 ? 'text-red-400' : undefined },
+                    { label:'Payouts Due', value: `$${(stats.pendingPayoutTotal || 0).toFixed(0)}`, color: stats.pendingPayoutTotal > 0 ? 'text-amber-300' : undefined },
+                  ].map(({label,value,color}) => (
                     <div key={label} className="text-center">
-                      <div className="font-orbitron font-black text-xl text-amber-300">{value}</div>
+                      <div className={`font-orbitron font-black text-xl ${color || 'text-amber-300'}`}>{value}</div>
                       <div className="font-rajdhani text-[10px] text-slate-500 tracking-widest uppercase">{label}</div>
                     </div>
                   ))}
@@ -298,22 +351,59 @@ export default function FounderDashboard() {
             </div>
           )}
 
-          {/* Tabs */}
-          <div className="flex flex-wrap gap-1">
-            {TABS.map(t => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`font-orbitron text-[10px] tracking-widest uppercase px-4 py-2 border transition-all ${
-                  tab === t
-                    ? 'border-amber-500/60 bg-amber-900/20 text-amber-300'
-                    : 'border-slate-800 text-slate-600 hover:border-amber-500/20 hover:text-slate-400'
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+          {/* Nav (sidebar on desktop, pill row on mobile) + Content */}
+          <div className="flex flex-col lg:flex-row gap-5">
+            <nav className="hidden lg:flex lg:flex-col lg:w-52 flex-shrink-0 gap-5 sticky top-4 self-start">
+              {TAB_GROUPS.map(group => (
+                <div key={group.label}>
+                  <div className="font-orbitron text-[9px] text-slate-600 tracking-[0.3em] uppercase px-2 mb-1.5">{group.label}</div>
+                  <div className="flex flex-col gap-0.5">
+                    {group.tabs.map(t => (
+                      <button
+                        key={t}
+                        onClick={() => setTab(t)}
+                        className={`text-left font-orbitron text-[10px] tracking-widest uppercase px-3 py-2 border-l-2 transition-all flex items-center justify-between gap-2 ${
+                          tab === t
+                            ? 'border-amber-400 bg-amber-900/15 text-amber-300'
+                            : 'border-transparent text-slate-500 hover:border-amber-500/30 hover:text-slate-300 hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        <span>{t}</span>
+                        {t === 'AI Alerts' && (stats?.unresolvedReports + stats?.riskyUserCount > 0) && (
+                          <span className="font-orbitron text-[8px] bg-red-500/80 text-white rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                            {(stats?.unresolvedReports || 0) + (stats?.riskyUserCount || 0)}
+                          </span>
+                        )}
+                        {t === 'Payouts' && stats?.pendingPayoutCount > 0 && (
+                          <span className="font-orbitron text-[8px] bg-amber-500/80 text-black rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                            {stats.pendingPayoutCount}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </nav>
+
+            {/* Mobile tab row */}
+            <div className="flex lg:hidden flex-wrap gap-1">
+              {ALL_TABS.map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`font-orbitron text-[10px] tracking-widest uppercase px-4 py-2 border transition-all ${
+                    tab === t
+                      ? 'border-amber-500/60 bg-amber-900/20 text-amber-300'
+                      : 'border-slate-800 text-slate-600 hover:border-amber-500/20 hover:text-slate-400'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 min-w-0 flex flex-col gap-4">
 
           {loading ? (
             <div className="flex items-center justify-center min-h-[40vh]">
@@ -324,6 +414,89 @@ export default function FounderDashboard() {
             </div>
           ) : (
             <>
+              {/* ── OVERVIEW TAB ── */}
+              {tab === 'Overview' && stats && (
+                <div className="flex flex-col gap-5">
+                  {/* Status grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Active Members', value: stats.activeUsers, sub: `${stats.totalUsers} total`, color: 'text-green-400' },
+                      { label: 'Suspended', value: stats.suspendedUsers, sub: `${stats.bannedUsers} banned`, color: 'text-orange-400' },
+                      { label: 'Quests Open', value: stats.openQuests, sub: `${stats.claimedQuests} claimed`, color: 'text-amber-300' },
+                      { label: 'Awaiting Review', value: stats.submittedQuests, sub: `${stats.approvedQuests} approved`, color: 'text-blue-400' },
+                      { label: 'Pending Trials', value: stats.pendingTrials, sub: `${stats.totalTrials} total`, color: 'text-purple-400' },
+                      { label: 'Unresolved Reports', value: stats.unresolvedReports, sub: 'tap to review', color: stats.unresolvedReports > 0 ? 'text-red-400' : 'text-slate-400', onClick: () => setTab('AI Alerts') },
+                      { label: 'Flagged Content', value: stats.flaggedTotal, sub: `${stats.flaggedChatCount} chat · ${stats.flaggedMessageCount} DM`, color: stats.flaggedTotal > 0 ? 'text-red-400' : 'text-slate-400', onClick: () => setTab('AI Alerts') },
+                      { label: 'Payouts Due', value: `$${(stats.pendingPayoutTotal || 0).toFixed(2)}`, sub: `${stats.pendingPayoutCount} quest(s)`, color: stats.pendingPayoutTotal > 0 ? 'text-amber-300' : 'text-slate-400', onClick: () => setTab('Payouts') },
+                    ].map(card => (
+                      <div key={card.label}
+                        onClick={card.onClick}
+                        className={`bg-[#0d0017] border border-amber-500/15 p-4 ${card.onClick ? 'cursor-pointer hover:border-amber-500/40 transition-all' : ''}`}>
+                        <div className={`font-orbitron font-black text-2xl ${card.color}`}>{card.value ?? 0}</div>
+                        <div className="font-rajdhani text-xs text-slate-500 mt-1">{card.label}</div>
+                        <div className="font-rajdhani text-[10px] text-slate-600 mt-0.5">{card.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid lg:grid-cols-2 gap-5">
+                    {/* Recent activity feed */}
+                    <div className="bg-[#0d0017] border border-amber-500/15 p-4">
+                      <div className="font-orbitron text-xs text-amber-400 tracking-widest uppercase mb-3">Recent Activity</div>
+                      <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
+                        {(stats.recentActivity || []).length === 0 && (
+                          <div className="font-rajdhani text-sm text-slate-600">No activity logged yet.</div>
+                        )}
+                        {(stats.recentActivity || []).map((log: any) => (
+                          <div key={log.id} className="flex items-start justify-between gap-3 py-1.5 border-b border-amber-500/5 last:border-0">
+                            <div className="min-w-0">
+                              <div className="font-rajdhani text-sm text-slate-300 truncate">{log.details || log.action}</div>
+                              <div className="font-orbitron text-[9px] text-slate-600 tracking-wider uppercase mt-0.5">
+                                {log.user?.nickname || log.user?.name || 'System'} · {log.action}
+                              </div>
+                            </div>
+                            <div className="font-rajdhani text-[10px] text-slate-600 whitespace-nowrap">
+                              {new Date(log.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Quick alerts preview */}
+                    <div className="bg-[#0d0017] border border-red-500/15 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="font-orbitron text-xs text-red-400 tracking-widest uppercase">Needs Attention</div>
+                        <button onClick={() => setTab('AI Alerts')} className="font-orbitron text-[9px] text-amber-400 hover:text-amber-300 tracking-widest uppercase">View All →</button>
+                      </div>
+                      <div className="flex flex-col gap-2 max-h-96 overflow-y-auto">
+                        {(alerts.unresolvedReports || []).length === 0 && (alerts.riskyUsers || []).length === 0 && (alerts.flaggedChat || []).length === 0 && (alerts.flaggedDMs || []).length === 0 && (
+                          <div className="font-rajdhani text-sm text-slate-600">All clear — nothing flagged right now.</div>
+                        )}
+                        {(alerts.unresolvedReports || []).slice(0, 3).map((r: any) => (
+                          <div key={r.id} className="flex items-center justify-between py-1.5 border-b border-red-500/5">
+                            <span className="font-rajdhani text-sm text-slate-300 truncate">Report: {r.reportedAbout?.nickname || r.reportedAbout?.name || 'Unknown'}</span>
+                            <span className="font-orbitron text-[9px] text-red-400 uppercase">Report</span>
+                          </div>
+                        ))}
+                        {(alerts.riskyUsers || []).slice(0, 3).map((u: any) => (
+                          <div key={u.id} className="flex items-center justify-between py-1.5 border-b border-red-500/5">
+                            <span className="font-rajdhani text-sm text-slate-300 truncate">{u.nickname || u.name} — trust {u.trustLevel}</span>
+                            <span className="font-orbitron text-[9px] text-orange-400 uppercase">Trust</span>
+                          </div>
+                        ))}
+                        {(alerts.flaggedChat || []).slice(0, 2).map((m: any) => (
+                          <div key={m.id} className="flex items-center justify-between py-1.5 border-b border-red-500/5">
+                            <span className="font-rajdhani text-sm text-slate-300 truncate">Flagged chat from {m.user?.nickname || m.user?.name}</span>
+                            <span className="font-orbitron text-[9px] text-red-400 uppercase">Chat</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* ── USERS TAB ── */}
               {tab === 'Users' && (
                 <div className="flex flex-col gap-4">
@@ -400,6 +573,12 @@ export default function FounderDashboard() {
                                     className="font-orbitron text-[8px] px-2 py-0.5 border border-orange-500/30 text-orange-400 hover:bg-orange-900/20 transition-all">
                                     WARN
                                   </button>
+                                  {u.role !== 'FOUNDER' && (
+                                    <button onClick={() => deleteUser(u.id, u.nickname || u.name || u.email)}
+                                      className="font-orbitron text-[8px] px-2 py-0.5 border border-red-600/50 text-red-500 hover:bg-red-900/30 transition-all">
+                                      DELETE
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -1070,27 +1249,110 @@ export default function FounderDashboard() {
 
               {/* ── AI ALERTS TAB ── */}
               {tab === 'AI Alerts' && (
-                <div className="bg-[#0d0017] border border-red-500/20 p-6">
-                  <h3 className="font-orbitron text-xs text-red-400 tracking-widest uppercase mb-5">System Alerts</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {[
-                      { icon:'⚠', label:'Suspicious Activity', value: 0, color:'text-yellow-400', border:'border-yellow-500/20' },
-                      { icon:'◎', label:'Ghosting Risk',        value: users.filter(u=>u.role==='ACTIVE_WORKER').length > 0 ? 1 : 0, color:'text-orange-400', border:'border-orange-500/20' },
-                      { icon:'⛔', label:'Plagiarism Flags',    value: 0, color:'text-red-400',    border:'border-red-500/20'    },
-                      { icon:'◈', label:'Contact Leak Attempts',value: 0, color:'text-purple-400', border:'border-purple-500/20' },
-                    ].map(({icon,label,value,color,border}) => (
-                      <div key={label} className={`border ${border} p-4`}>
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className={`text-xl ${color}`}>{icon}</span>
-                          <span className="font-orbitron text-xs text-white">{label}</span>
+                <div className="flex flex-col gap-5">
+                  <div className="bg-[#0d0017] border border-red-500/20 p-6">
+                    <h3 className="font-orbitron text-xs text-red-400 tracking-widest uppercase mb-5">System Alerts — Live Data</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {[
+                        { icon:'⚠', label:'Flagged Chat',     value: alerts.flaggedChat?.length || 0,     color:'text-yellow-400', border:'border-yellow-500/20' },
+                        { icon:'✉', label:'Flagged DMs',      value: alerts.flaggedDMs?.length || 0,      color:'text-orange-400', border:'border-orange-500/20' },
+                        { icon:'⛔', label:'Open Reports',     value: alerts.unresolvedReports?.length || 0, color:'text-red-400',    border:'border-red-500/20'    },
+                        { icon:'◈', label:'Risky / Watched',  value: alerts.riskyUsers?.length || 0,      color:'text-purple-400', border:'border-purple-500/20' },
+                      ].map(({icon,label,value,color,border}) => (
+                        <div key={label} className={`border ${border} p-4`}>
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className={`text-xl ${color}`}>{icon}</span>
+                            <span className="font-orbitron text-xs text-white">{label}</span>
+                          </div>
+                          <div className={`font-orbitron font-black text-3xl ${color}`}>{value}</div>
+                          <div className="font-rajdhani text-xs text-slate-600 mt-1">Live from Sentinel</div>
                         </div>
-                        <div className={`font-orbitron font-black text-3xl ${color}`}>{value}</div>
-                        <div className="font-rajdhani text-xs text-slate-600 mt-1">Active alerts</div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                  <div className="mt-6 border border-purple-500/10 p-4">
-                    <p className="font-rajdhani text-slate-600 text-sm">Full AI moderation system is operational. All messages, submissions and behavior patterns are being monitored by Sentinel.</p>
+
+                  {/* Unresolved reports */}
+                  <div className="bg-[#0d0017] border border-amber-500/15 p-4">
+                    <h4 className="font-orbitron text-xs text-amber-400 tracking-widest uppercase mb-3">Unresolved Reports</h4>
+                    {(!alerts.unresolvedReports || alerts.unresolvedReports.length === 0) ? (
+                      <p className="font-rajdhani text-sm text-slate-600">No open reports.</p>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {alerts.unresolvedReports.map((r: any) => (
+                          <div key={r.id} className="flex items-start justify-between gap-3 border border-amber-500/10 p-3">
+                            <div>
+                              <div className="font-rajdhani text-sm text-slate-300">
+                                <span className="text-slate-500">{r.reportedBy?.nickname || r.reportedBy?.name || 'Unknown'}</span> reported{' '}
+                                <span className="text-white">{r.reportedAbout?.nickname || r.reportedAbout?.name || 'Unknown'}</span>
+                              </div>
+                              <div className="font-rajdhani text-xs text-slate-500 mt-1">{r.reason}</div>
+                              <div className="font-orbitron text-[9px] text-slate-600 mt-1">{new Date(r.createdAt).toLocaleString()}</div>
+                            </div>
+                            <button onClick={() => resolveReport(r.id)}
+                              className="font-orbitron text-[9px] px-3 py-1.5 border border-green-500/40 text-green-400 hover:bg-green-900/20 transition-all whitespace-nowrap">
+                              RESOLVE
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Risky / watched users */}
+                  <div className="bg-[#0d0017] border border-purple-500/15 p-4">
+                    <h4 className="font-orbitron text-xs text-purple-400 tracking-widest uppercase mb-3">Risky / Watched Users</h4>
+                    {(!alerts.riskyUsers || alerts.riskyUsers.length === 0) ? (
+                      <p className="font-rajdhani text-sm text-slate-600">No users currently flagged by the trust engine.</p>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {alerts.riskyUsers.map((u: any) => (
+                          <div key={u.id} className="flex items-center justify-between border border-purple-500/10 p-3">
+                            <div className="font-rajdhani text-sm text-slate-300">{u.nickname || u.name} <span className="text-slate-600">({u.email})</span></div>
+                            <div className="flex items-center gap-3">
+                              <span className="font-orbitron text-[10px] text-slate-500">score {u.trustScore}</span>
+                              <span className={`font-orbitron text-[9px] uppercase px-2 py-0.5 border ${u.trustLevel === 'RISK' ? 'text-red-400 border-red-500/30' : 'text-orange-400 border-orange-500/30'}`}>{u.trustLevel}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Flagged chat & DMs */}
+                  <div className="grid lg:grid-cols-2 gap-5">
+                    <div className="bg-[#0d0017] border border-yellow-500/15 p-4">
+                      <h4 className="font-orbitron text-xs text-yellow-400 tracking-widest uppercase mb-3">Flagged Chat Messages</h4>
+                      {(!alerts.flaggedChat || alerts.flaggedChat.length === 0) ? (
+                        <p className="font-rajdhani text-sm text-slate-600">Nothing flagged in chat.</p>
+                      ) : (
+                        <div className="flex flex-col gap-2 max-h-80 overflow-y-auto">
+                          {alerts.flaggedChat.map((m: any) => (
+                            <div key={m.id} className="border border-yellow-500/10 p-2.5">
+                              <div className="font-rajdhani text-xs text-slate-500">{m.user?.nickname || m.user?.name} · #{m.channel}</div>
+                              <div className="font-rajdhani text-sm text-slate-300 mt-0.5">{m.content}</div>
+                              {m.flagReason && <div className="font-orbitron text-[9px] text-yellow-500 mt-1">{m.flagReason}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="bg-[#0d0017] border border-orange-500/15 p-4">
+                      <h4 className="font-orbitron text-xs text-orange-400 tracking-widest uppercase mb-3">Flagged Direct Messages</h4>
+                      {(!alerts.flaggedDMs || alerts.flaggedDMs.length === 0) ? (
+                        <p className="font-rajdhani text-sm text-slate-600">Nothing flagged in DMs.</p>
+                      ) : (
+                        <div className="flex flex-col gap-2 max-h-80 overflow-y-auto">
+                          {alerts.flaggedDMs.map((m: any) => (
+                            <div key={m.id} className="border border-orange-500/10 p-2.5">
+                              <div className="font-rajdhani text-xs text-slate-500">
+                                {m.from?.nickname || m.from?.name} → {m.to?.nickname || m.to?.name}
+                              </div>
+                              <div className="font-rajdhani text-sm text-slate-300 mt-0.5">{m.content}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1275,21 +1537,57 @@ export default function FounderDashboard() {
 
               {/* ── PAYOUTS TAB ── */}
               {tab === 'Payouts' && (
-                <div className="bg-[#0d0017] border border-purple-500/20 p-6">
-                  <h3 className="font-orbitron text-xs text-white tracking-widest uppercase mb-5">Payout Management</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-                    {[
-                      { label:'Pending', value:'$0', color:'text-yellow-400' },
-                      { label:'Approved', value:'$0', color:'text-green-400' },
-                      { label:'Total Paid', value:'$0', color:'text-purple-400' },
-                    ].map(({label,value,color}) => (
-                      <div key={label} className="border border-purple-500/15 p-4 text-center">
-                        <div className={`font-orbitron font-black text-2xl ${color}`}>{value}</div>
-                        <div className="font-rajdhani text-xs text-slate-600 tracking-widest uppercase mt-1">{label}</div>
-                      </div>
-                    ))}
+                <div className="flex flex-col gap-5">
+                  <div className="bg-[#0d0017] border border-purple-500/20 p-6">
+                    <h3 className="font-orbitron text-xs text-white tracking-widest uppercase mb-5">Payout Management</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      {[
+                        { label:'Pending', value:`$${(payouts.totalPending || 0).toFixed(2)}`, sub: `${payouts.pendingCount || 0} quest(s)`, color:'text-yellow-400' },
+                        { label:'Paid Out', value:`$${(payouts.totalPaid || 0).toFixed(2)}`, sub: `${payouts.paidCount || 0} quest(s)`, color:'text-green-400' },
+                        { label:'Total Approved Value', value:`$${((payouts.totalPending || 0) + (payouts.totalPaid || 0)).toFixed(2)}`, sub: `${payouts.quests?.length || 0} quest(s)`, color:'text-purple-400' },
+                      ].map(({label,value,sub,color}) => (
+                        <div key={label} className="border border-purple-500/15 p-4 text-center">
+                          <div className={`font-orbitron font-black text-2xl ${color}`}>{value}</div>
+                          <div className="font-rajdhani text-xs text-slate-600 tracking-widest uppercase mt-1">{label}</div>
+                          <div className="font-rajdhani text-[10px] text-slate-700 mt-0.5">{sub}</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <p className="font-rajdhani text-slate-600 text-sm">Payout system will activate once quests are completed and reviewed. All payouts require Founder approval.</p>
+
+                  <div className="bg-[#0d0017] border border-purple-500/15 p-4">
+                    <h4 className="font-orbitron text-xs text-purple-400 tracking-widest uppercase mb-3">Approved Quests With Cash Reward</h4>
+                    {(!payouts.quests || payouts.quests.length === 0) ? (
+                      <p className="font-rajdhani text-sm text-slate-600">No approved quests carry a cash reward yet.</p>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {payouts.quests.map((q: any) => (
+                          <div key={q.id} className="flex items-center justify-between gap-3 border border-purple-500/10 p-3">
+                            <div className="min-w-0">
+                              <div className="font-rajdhani text-sm text-slate-200 truncate">{q.title}</div>
+                              <div className="font-orbitron text-[9px] text-slate-600 mt-0.5">
+                                {q.claimedBy?.nickname || q.claimedBy?.name || 'Unclaimed'} · reviewed {q.reviewedAt ? new Date(q.reviewedAt).toLocaleDateString() : '—'}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <span className="font-orbitron font-black text-amber-300">${(q.cashReward || 0).toFixed(2)}</span>
+                              {q.payoutStatus === 'PAID' ? (
+                                <button onClick={() => setPayoutStatus(q.id, 'PENDING')}
+                                  className="font-orbitron text-[9px] px-3 py-1.5 border border-green-500/40 text-green-400 hover:bg-green-900/20 transition-all whitespace-nowrap">
+                                  PAID ✓
+                                </button>
+                              ) : (
+                                <button onClick={() => setPayoutStatus(q.id, 'PAID')}
+                                  className="font-orbitron text-[9px] px-3 py-1.5 border border-amber-500/40 text-amber-300 hover:bg-amber-900/20 transition-all whitespace-nowrap">
+                                  MARK PAID
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1329,6 +1627,8 @@ export default function FounderDashboard() {
               )}
             </>
           )}
+            </div>
+          </div>
         </div>
       </DashboardLayout>
     </>

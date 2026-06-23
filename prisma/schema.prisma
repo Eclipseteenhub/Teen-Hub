@@ -65,6 +65,12 @@ enum PostVisibility {
   ACCEPTED_ONLY
 }
 
+enum PayoutStatus {
+  NOT_APPLICABLE
+  PENDING
+  PAID
+}
+
 model User {
   id                 String       @id @default(cuid())
   email              String       @unique
@@ -208,6 +214,8 @@ model Quest {
   submissionNote String?
   reviewedAt     DateTime?
   reviewNote     String?
+  payoutStatus   PayoutStatus @default(NOT_APPLICABLE)
+  paidAt         DateTime?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 }

@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { applyTrustEvent } from '@/lib/trustEngine'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions)
@@ -58,6 +59,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         where: { id: trial.userId },
         data: { role: 'ACCEPTED_MEMBER' },
       })
+      await applyTrustEvent(trial.userId, 'TRIAL_ACCEPTED', 'Trial accepted by Founder', 'FOUNDER')
       await prisma.activityLog.create({
         data: { userId: trial.userId, action: 'TRIAL_ACCEPTED', details: 'Trial accepted by Founder' },
       })

@@ -21,15 +21,11 @@ const OR_BASE = 'https://openrouter.ai/api/v1'
 const OR_KEY  = () => process.env.OpenRouter_Api_Key!
 
 const MODELS = {
-  // Reasoning / eval (Mistral direct — confirmed working)
   reasoning:  'mistral-small-latest',
-  // Risk analysis (OpenRouter → anthropic claude haiku, falls back to mistral)
   risk:       'anthropic/claude-3-haiku',
   riskFree:   'meta-llama/llama-3.2-3b-instruct:free',
-  // Deep analysis (OpenRouter → google gemini flash, falls back to mistral)
   deep:       'google/gemini-flash-1.5',
   deepFree:   'mistralai/mistral-7b-instruct:free',
-  // Routing model (cheap, OpenRouter)
   router:     'mistralai/mistral-7b-instruct:free',
 }
 
@@ -126,8 +122,6 @@ export async function openRouterChat(
 }
 
 // ─── Risk Engine (replaces Grok) ───────────────────────────────────────────
-// Uses OpenRouter → Claude Haiku for pattern/anomaly detection
-// Falls back to Mistral if OpenRouter has no credits
 
 export async function riskAnalysis(
   messages: ChatMsg[],
@@ -141,8 +135,6 @@ export async function riskAnalysis(
 }
 
 // ─── Deep Analysis Engine (replaces Gemini) ────────────────────────────────
-// Uses OpenRouter → Gemini Flash for high-value evaluations
-// Falls back to Mistral if quota is exceeded
 
 export async function deepAnalysis(
   prompt: string,
@@ -159,9 +151,6 @@ export async function deepAnalysis(
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── MESSAGE MODERATION PIPELINE ──────────────────────────────────────────
-// Stage 1: HuggingFace  → fast toxicity check
-// Stage 2: Risk engine  → pattern/intent analysis
-// Stage 3: Mistral      → severity judgment + notification decision
 
 export async function moderateMessage(text: string): Promise<{
   safe: boolean
@@ -170,7 +159,6 @@ export async function moderateMessage(text: string): Promise<{
   reason: string | null
   notifyFounder: boolean
 }> {
-  // Stage 1 — HF
   let toxicityScore = 0
   try {
     const [top] = await hfClassify(text)
@@ -183,7 +171,6 @@ export async function moderateMessage(text: string): Promise<{
     return { safe: true, toxicityScore, stage: 'HF', reason: null, notifyFounder: false }
   }
 
-  // Stage 2 — Risk engine (pattern analysis)
   let patternFlag = false
   try {
     const riskResult = await riskAnalysis([
@@ -204,7 +191,6 @@ export async function moderateMessage(text: string): Promise<{
     return { safe: false, toxicityScore, stage: 'Risk', reason: 'Flagged for review', notifyFounder: false }
   }
 
-  // Stage 3 — Mistral severity judgment
   try {
     const severity = await mistralChat([
       {
@@ -224,7 +210,6 @@ export async function moderateMessage(text: string): Promise<{
 }
 
 // ─── TRIAL EVALUATION ─────────────────────────────────────────────────────
-// Mistral primary → Deep analysis secondary for borderline cases
 
 export async function evaluateTrial(trial: {
   strengths: string
@@ -260,13 +245,42 @@ Reply ONLY with JSON: { "score": number, "summary": string, "recommendation": "A
     if (m) return JSON.parse(m[0])
   } catch {}
 
-  // Fallback
   return {
     score: 50,
     summary: 'Unable to complete AI evaluation. Manual review required.',
     recommendation: 'REVIEW',
     strengths: [],
     concerns: ['AI evaluation failed — review manually'],
+  }
+}
+
+// ─── FOUNDER-ASSISTED TRIAL DRAFTING ──────────────────────────────────────
+// Turns the founder's rough scouting notes into a clean application draft
+
+export async function draftTrialFromNotes(input: {
+  rawNotes: string
+  skills: string[]
+  availability?: string
+}): Promise<{ strengths: string; whyJoin: string; availability: string }> {
+  const prompt = `A guild founder is manually recruiting a talented teen and jotted down rough notes. Turn these into a clean, first-person application draft as if the applicant wrote it.
+
+Founder's notes: ${input.rawNotes}
+Skills: ${input.skills.join(', ')}
+Availability (if known): ${input.availability ?? 'not specified — infer something reasonable'}
+
+Reply ONLY with JSON: { "strengths": string, "whyJoin": string, "availability": string }
+Each field 1-3 sentences, grounded only in the notes given — don't invent claims they don't support.`
+
+  try {
+    const raw = await mistralChat([{ role: 'user', content: prompt }], { maxTokens: 300 })
+    const m = raw.match(/\{[\s\S]*\}/)
+    if (m) return JSON.parse(m[0])
+  } catch {}
+
+  return {
+    strengths: input.rawNotes,
+    whyJoin: 'Recruited directly by the founder.',
+    availability: input.availability ?? 'Not specified',
   }
 }
 

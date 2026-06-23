@@ -270,6 +270,17 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
           <span className="text-base">⏻</span>
           <span className="font-rajdhani text-sm tracking-wide">Log Out</span>
         </button>
+        {/* Discreet identity switch — not a feature normal members are pointed to.
+            Signs out of the current session cleanly, then drops straight onto
+            the admin/founder login form instead of the public landing page. */}
+        <button
+          onClick={() => signOut({ callbackUrl: '/admin-login', redirect: true })}
+          className="flex items-center gap-3 px-3 py-2 text-slate-800 hover:text-purple-500 transition-colors w-full text-left text-[10px] tracking-widest"
+          title="Switch account"
+        >
+          <span className="text-sm">⇄</span>
+          <span className="font-rajdhani tracking-wide">Switch Account</span>
+        </button>
       </div>
     </div>
   )

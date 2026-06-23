@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import Head from 'next/head'
-import { signIn, getSession } from 'next-auth/react'
+import { signIn, getSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/router'
 import { GetServerSideProps } from 'next'
 import { GlowInput } from '@/components/ui/GlowInput'
@@ -38,6 +38,9 @@ export default function AdminLoginPage() {
     } else if (['ADMIN', 'MODERATOR', 'COORDINATOR'].includes(role)) {
       router.push('/admin')
     } else {
+      // Credentials were valid for a normal member account — don't leave
+      // them signed in here. Clear the session before showing the error.
+      await signOut({ redirect: false })
       setError('Access denied. This login is for admin and founder accounts only.')
       setLoading(false)
     }
