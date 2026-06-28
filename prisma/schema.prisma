@@ -32,11 +32,23 @@ enum Rank {
 
 enum QuestStatus {
   OPEN
+  FULL
+  CLOSED
+}
+
+enum ClaimStatus {
   CLAIMED
   IN_PROGRESS
   SUBMITTED
   APPROVED
   REJECTED
+}
+
+enum SuggestionStatus {
+  PENDING
+  DISCUSSING
+  APPROVED
+  DECLINED
 }
 
 enum TrialStatus {
@@ -117,7 +129,8 @@ model User {
   accounts           Account[]
   sessions           Session[]
   trial              Trial?
-  questsClaimed      Quest[]      @relation("ClaimedBy")
+  questClaims        QuestClaim[] @relation("QuestClaimUser")
+  questSuggestions   QuestSuggestion[]
   messagesFrom       Message[]    @relation("MessageFrom")
   messagesTo         Message[]    @relation("MessageTo")
   chatMessages       ChatMessage[]
@@ -197,19 +210,30 @@ model Trial {
 }
 
 model Quest {
-  id             String      @id @default(cuid())
-  title          String
-  category       String
-  difficulty     String
-  rankRequired   Rank        @default(F)
-  deadline       DateTime?
-  rewardXp       Int         @default(50)
-  cashReward     Float?
-  instructions   String
-  status         QuestStatus @default(OPEN)
-  claimedById    String?
-  claimedBy      User?       @relation("ClaimedBy", fields: [claimedById], references: [id])
-  claimedAt      DateTime?
+  id              String      @id @default(cuid())
+  title           String
+  category        String
+  difficulty      String
+  rankRequired    Rank        @default(F)
+  deadline        DateTime?
+  rewardXp        Int         @default(50)
+  cashReward      Float?
+  instructions    String
+  status          QuestStatus @default(OPEN)
+  maxParticipants Int         @default(1)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  claims          QuestClaim[]
+}
+
+model QuestClaim {
+  id             String       @id @default(cuid())
+  questId        String
+  quest          Quest        @relation(fields: [questId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation("QuestClaimUser", fields: [userId], references: [id], onDelete: Cascade)
+  status         ClaimStatus  @default(CLAIMED)
+  claimedAt      DateTime     @default(now())
   submittedAt    DateTime?
   submissionUrl  String?
   submissionNote String?
@@ -219,8 +243,30 @@ model Quest {
   paidAt         DateTime?
   clientRating   Int?
   clientFeedback String?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+
+  @@unique([questId, userId])
+  @@index([userId])
+  @@index([questId])
+}
+
+model QuestSuggestion {
+  id              String           @id @default(cuid())
+  suggestedById   String
+  suggestedBy     User             @relation(fields: [suggestedById], references: [id], onDelete: Cascade)
+  title           String
+  category        String
+  difficulty      String
+  rankRequired    Rank             @default(F)
+  rewardXp        Int              @default(50)
+  cashReward      Float?
+  instructions    String
+  deadline        DateTime?
+  maxParticipants Int              @default(1)
+  status          SuggestionStatus @default(PENDING)
+  founderNote     String?
+  resultingQuestId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 }
 
 model Notification {

@@ -8,20 +8,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!session || session.user.role !== 'FOUNDER') return res.status(403).json({ error: 'Forbidden' })
 
   if (req.method === 'GET') {
-    const quests = await prisma.quest.findMany({
-      where: { status: 'APPROVED', cashReward: { not: null } },
+    const claims = await prisma.questClaim.findMany({
+      where: { status: 'APPROVED', quest: { cashReward: { not: null } } },
       orderBy: { reviewedAt: 'desc' },
-      include: { claimedBy: { select: { id: true, nickname: true, name: true, email: true } } },
+      include: {
+        user: { select: { id: true, nickname: true, name: true, email: true } },
+        quest: { select: { id: true, title: true, cashReward: true } },
+      },
     })
 
-    const pending = quests.filter(q => q.payoutStatus === 'PENDING')
-    const paid = quests.filter(q => q.payoutStatus === 'PAID')
+    const pending = claims.filter(c => c.payoutStatus === 'PENDING')
+    const paid = claims.filter(c => c.payoutStatus === 'PAID')
 
-    const totalPending = pending.reduce((sum, q) => sum + (q.cashReward || 0), 0)
-    const totalPaid = paid.reduce((sum, q) => sum + (q.cashReward || 0), 0)
+    const totalPending = pending.reduce((sum, c) => sum + (c.quest.cashReward || 0), 0)
+    const totalPaid = paid.reduce((sum, c) => sum + (c.quest.cashReward || 0), 0)
 
     return res.json({
-      quests,
+      claims,
       totalPending,
       totalPaid,
       pendingCount: pending.length,
@@ -34,11 +37,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!id || !['PENDING', 'PAID'].includes(status)) {
       return res.status(400).json({ error: 'id and a valid status are required' })
     }
-    const quest = await prisma.quest.update({
+    const claim = await prisma.questClaim.update({
       where: { id },
       data: { payoutStatus: status, paidAt: status === 'PAID' ? new Date() : null },
     })
-    return res.json({ quest })
+    return res.json({ claim })
   }
 
   res.status(405).end()

@@ -48,7 +48,7 @@ export default function DashboardPage() {
   const user = userData || session.user
   const rank = user.rank || 'F'
   const xp = user.xp || 0
-  const activeQuests = userData?.questsClaimed?.length || 0
+  const activeQuests = userData?.questClaims?.length || 0
   const warnings = userData?.warnings?.length || 0
   const recentActivity = userData?.activityLogs || []
   const recentXP = userData?.xpLogs || []

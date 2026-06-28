@@ -27,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!user) return res.status(404).json({ error: 'User not found' })
 
   const [quests, flags, warnings] = await Promise.all([
-    prisma.quest.findMany({ where: { claimedById: userId }, select: { status: true } }),
+    prisma.questClaim.findMany({ where: { userId }, select: { status: true } }),
     prisma.chatMessage.count({ where: { userId, flagged: true } }),
     prisma.warning.count({ where: { userId } }),
   ])

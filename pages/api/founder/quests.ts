@@ -10,13 +10,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'GET') {
     const quests = await prisma.quest.findMany({
       orderBy: { createdAt: 'desc' },
-      include: { claimedBy: { select: { nickname: true, name: true } } },
+      include: {
+        claims: { include: { user: { select: { id: true, nickname: true, name: true } } } },
+      },
     })
     return res.json({ quests })
   }
 
   if (req.method === 'POST') {
-    const { title, category, difficulty, rankRequired, rewardXp, cashReward, instructions, deadline } = req.body
+    const { title, category, difficulty, rankRequired, rewardXp, cashReward, instructions, deadline, maxParticipants } = req.body
     if (!title || !instructions) return res.status(400).json({ error: 'Title and instructions required' })
 
     let parsedDeadline: Date | null = null
@@ -24,6 +26,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const d = new Date(deadline)
       if (!isNaN(d.getTime())) parsedDeadline = d
     }
+
+    const slots = Math.max(1, parseInt(maxParticipants) || 1)
 
     try {
       const quest = await prisma.quest.create({
@@ -36,6 +40,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           cashReward: cashReward ? parseFloat(cashReward) : null,
           instructions,
           deadline: parsedDeadline,
+          maxParticipants: slots,
           status: 'OPEN',
         },
       })

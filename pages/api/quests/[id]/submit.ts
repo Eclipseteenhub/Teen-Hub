@@ -14,13 +14,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const quest = await prisma.quest.findUnique({ where: { id } })
   if (!quest) return res.status(404).json({ error: 'Quest not found' })
-  if (quest.claimedById !== session.user.id) return res.status(403).json({ error: 'You have not claimed this quest' })
-  if (!['CLAIMED', 'IN_PROGRESS'].includes(quest.status)) {
+
+  const claim = await prisma.questClaim.findUnique({
+    where: { questId_userId: { questId: id, userId: session.user.id } },
+  })
+  if (!claim) return res.status(403).json({ error: 'You have not claimed this quest' })
+  if (!['CLAIMED', 'IN_PROGRESS'].includes(claim.status)) {
     return res.status(400).json({ error: 'This quest is not awaiting submission' })
   }
 
-  const updated = await prisma.quest.update({
-    where: { id },
+  const updated = await prisma.questClaim.update({
+    where: { id: claim.id },
     data: {
       status: 'SUBMITTED',
       submittedAt: new Date(),
@@ -33,5 +37,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     data: { userId: session.user.id, action: 'QUEST_SUBMITTED', details: `Submitted quest: ${quest.title}` },
   })
 
-  res.json({ quest: updated })
+  res.json({ claim: updated })
 }

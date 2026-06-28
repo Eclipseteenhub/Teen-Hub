@@ -13,8 +13,15 @@ const DIFFICULTY_COLOR: Record<string, string> = {
   Expert: 'text-red-400 border-red-500/30 bg-red-900/10',
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  OPEN:        'text-green-400',
+// Listing-level (Quest.status)
+const QUEST_STATUS_COLOR: Record<string, string> = {
+  OPEN:   'text-green-400',
+  FULL:   'text-yellow-400',
+  CLOSED: 'text-slate-500',
+}
+
+// Personal progress (QuestClaim.status) — takes priority when the member has a claim
+const CLAIM_STATUS_COLOR: Record<string, string> = {
   CLAIMED:     'text-yellow-400',
   IN_PROGRESS: 'text-blue-400',
   SUBMITTED:   'text-purple-400',
@@ -36,7 +43,7 @@ export default function QuestsPage() {
   }, [])
 
   const filtered = filter === 'all' ? quests
-    : filter === 'mine' ? quests.filter(q => q.claimedById === session?.user?.id)
+    : filter === 'mine' ? quests.filter(q => !!q.myClaim)
     : quests.filter(q => q.status === filter.toUpperCase())
 
   return (
@@ -51,7 +58,7 @@ export default function QuestsPage() {
               <p className="font-rajdhani text-slate-500 text-sm mt-1">Active missions available to your rank</p>
             </div>
             <div className="flex items-center gap-1.5">
-              {['all', 'mine', 'open', 'claimed'].map(f => (
+              {['all', 'mine', 'open', 'full'].map(f => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
@@ -82,65 +89,74 @@ export default function QuestsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filtered.map((quest: any) => (
-                <Link href={`/dashboard/quest/${quest.id}`} key={quest.id}>
-                  <div className="relative bg-[#0d0017] border border-purple-500/20 p-5 hover:border-purple-400/50 hover:shadow-[0_0_25px_rgba(168,85,247,0.08)] transition-all duration-300 group cursor-pointer h-full">
-                    <span className="absolute top-0 left-0 w-3 h-3 border-t border-l border-purple-500/40 group-hover:border-purple-400 transition-colors" />
-                    <span className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-purple-500/40 group-hover:border-purple-400 transition-colors" />
+              {filtered.map((quest: any) => {
+                const displayStatus = quest.myClaim?.status || quest.status
+                const statusColor = quest.myClaim ? CLAIM_STATUS_COLOR[displayStatus] : QUEST_STATUS_COLOR[displayStatus]
+                return (
+                  <Link href={`/dashboard/quest/${quest.id}`} key={quest.id}>
+                    <div className="relative bg-[#0d0017] border border-purple-500/20 p-5 hover:border-purple-400/50 hover:shadow-[0_0_25px_rgba(168,85,247,0.08)] transition-all duration-300 group cursor-pointer h-full">
+                      <span className="absolute top-0 left-0 w-3 h-3 border-t border-l border-purple-500/40 group-hover:border-purple-400 transition-colors" />
+                      <span className="absolute bottom-0 right-0 w-3 h-3 border-b border-r border-purple-500/40 group-hover:border-purple-400 transition-colors" />
 
-                    {quest.aiRecommended && (
-                      <div className="absolute -top-2.5 left-4 font-orbitron text-[8px] tracking-widest uppercase bg-amber-500 text-black px-2 py-0.5 flex items-center gap-1">
-                        <span>✦</span> AI MATCH
-                      </div>
-                    )}
-
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <h3 className="font-orbitron font-bold text-sm text-white leading-snug">{quest.title}</h3>
-                      <span className={`font-orbitron text-[9px] tracking-widest flex-shrink-0 ${STATUS_COLOR[quest.status] || 'text-slate-500'}`}>
-                        {quest.status.replace('_', ' ')}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 mb-4">
-                      <span className="font-orbitron text-[9px] border border-purple-500/30 bg-purple-900/20 text-purple-400 px-2 py-0.5 tracking-widest">
-                        {quest.category}
-                      </span>
-                      {quest.difficulty && (
-                        <span className={`font-orbitron text-[9px] border px-2 py-0.5 tracking-widest ${DIFFICULTY_COLOR[quest.difficulty] || 'text-slate-400 border-slate-700'}`}>
-                          {quest.difficulty}
-                        </span>
-                      )}
-                      <span className="font-orbitron text-[9px] border border-slate-700 text-slate-500 px-2 py-0.5 tracking-widest">
-                        Rank {quest.rankRequired}+
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 text-[11px]">
-                      <div>
-                        <div className="font-orbitron text-[8px] text-slate-700 tracking-widest uppercase">XP Reward</div>
-                        <div className="font-orbitron text-purple-400 font-bold mt-0.5">+{quest.rewardXp} XP</div>
-                      </div>
-                      {quest.deadline && (
-                        <div>
-                          <div className="font-orbitron text-[8px] text-slate-700 tracking-widest uppercase">Deadline</div>
-                          <div className="font-rajdhani text-slate-400 mt-0.5">
-                            {new Date(quest.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                          </div>
+                      {quest.aiRecommended && (
+                        <div className="absolute -top-2.5 left-4 font-orbitron text-[8px] tracking-widest uppercase bg-amber-500 text-black px-2 py-0.5 flex items-center gap-1">
+                          <span>✦</span> AI MATCH
                         </div>
                       )}
-                    </div>
 
-                    <div className="mt-4 pt-3 border-t border-purple-500/10 flex items-center justify-between">
-                      <span className="font-rajdhani text-xs text-slate-600">View Details →</span>
-                      {quest.status === 'OPEN' && (
-                        <span className="font-orbitron text-[9px] text-green-400 border border-green-500/30 px-2 py-0.5 tracking-widest">
-                          AVAILABLE
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <h3 className="font-orbitron font-bold text-sm text-white leading-snug">{quest.title}</h3>
+                        <span className={`font-orbitron text-[9px] tracking-widest flex-shrink-0 ${statusColor || 'text-slate-500'}`}>
+                          {displayStatus.replace('_', ' ')}
                         </span>
-                      )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 mb-4">
+                        <span className="font-orbitron text-[9px] border border-purple-500/30 bg-purple-900/20 text-purple-400 px-2 py-0.5 tracking-widest">
+                          {quest.category}
+                        </span>
+                        {quest.difficulty && (
+                          <span className={`font-orbitron text-[9px] border px-2 py-0.5 tracking-widest ${DIFFICULTY_COLOR[quest.difficulty] || 'text-slate-400 border-slate-700'}`}>
+                            {quest.difficulty}
+                          </span>
+                        )}
+                        <span className="font-orbitron text-[9px] border border-slate-700 text-slate-500 px-2 py-0.5 tracking-widest">
+                          Rank {quest.rankRequired}+
+                        </span>
+                        {quest.slotsTotal > 1 && (
+                          <span className="font-orbitron text-[9px] border border-blue-500/30 text-blue-400 px-2 py-0.5 tracking-widest">
+                            {quest.slotsFilled}/{quest.slotsTotal} SLOTS
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-[11px]">
+                        <div>
+                          <div className="font-orbitron text-[8px] text-slate-700 tracking-widest uppercase">XP Reward</div>
+                          <div className="font-orbitron text-purple-400 font-bold mt-0.5">+{quest.rewardXp} XP</div>
+                        </div>
+                        {quest.deadline && (
+                          <div>
+                            <div className="font-orbitron text-[8px] text-slate-700 tracking-widest uppercase">Deadline</div>
+                            <div className="font-rajdhani text-slate-400 mt-0.5">
+                              {new Date(quest.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t border-purple-500/10 flex items-center justify-between">
+                        <span className="font-rajdhani text-xs text-slate-600">View Details →</span>
+                        {quest.status === 'OPEN' && !quest.myClaim && (
+                          <span className="font-orbitron text-[9px] text-green-400 border border-green-500/30 px-2 py-0.5 tracking-widest">
+                            AVAILABLE
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                )
+              })}
             </div>
           )}
         </div>

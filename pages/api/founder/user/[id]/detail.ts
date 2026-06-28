@@ -10,22 +10,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const { id } = req.query as { id: string }
 
-  const [user, trial, quests, warnings] = await Promise.all([
+  const [user, trial, claims, warnings] = await Promise.all([
     prisma.user.findUnique({ where: { id } }),
     prisma.trial.findUnique({ where: { userId: id }, include: { assignedTask: true } }),
-    prisma.quest.findMany({ where: { claimedById: id }, orderBy: { createdAt: 'desc' } }),
+    prisma.questClaim.findMany({
+      where: { userId: id },
+      orderBy: { claimedAt: 'desc' },
+      include: { quest: { select: { id: true, title: true } } },
+    }),
     prisma.warning.findMany({ where: { userId: id }, orderBy: { createdAt: 'desc' } }),
   ])
 
   if (!user) return res.status(404).json({ error: 'User not found' })
 
-  const approved = quests.filter(q => q.status === 'APPROVED').length
-  const rejected = quests.filter(q => q.status === 'REJECTED' || (q.reviewNote && q.status === 'OPEN' && q.claimedById === null)).length
-  const totalReviewed = quests.filter(q => q.reviewedAt).length
+  const approved = claims.filter(c => c.status === 'APPROVED').length
+  const totalReviewed = claims.filter(c => c.reviewedAt).length
   const completionRate = totalReviewed > 0 ? Math.round((approved / totalReviewed) * 100) : null
-  const ratedQuests = quests.filter(q => q.clientRating != null)
-  const avgRating = ratedQuests.length > 0
-    ? Math.round((ratedQuests.reduce((s, q) => s + (q.clientRating || 0), 0) / ratedQuests.length) * 10) / 10
+  const ratedClaims = claims.filter(c => c.clientRating != null)
+  const avgRating = ratedClaims.length > 0
+    ? Math.round((ratedClaims.reduce((s, c) => s + (c.clientRating || 0), 0) / ratedClaims.length) * 10) / 10
     : null
 
   // passwordHash deliberately excluded — never sent to the client
@@ -34,15 +37,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   res.json({
     user: safeUser,
     trial,
-    quests,
+    quests: claims.map(c => ({
+      id: c.id,
+      title: c.quest.title,
+      status: c.status,
+      clientRating: c.clientRating,
+    })),
     warnings,
     stats: {
-      totalClaimed: quests.length,
+      totalClaimed: claims.length,
       approved,
       totalReviewed,
       completionRate,
       avgRating,
-      ratedCount: ratedQuests.length,
+      ratedCount: ratedClaims.length,
     },
   })
 }

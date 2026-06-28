@@ -7,7 +7,7 @@ export async function awardEligibleAchievements(userId: string) {
     prisma.user.findUnique({ where: { id: userId }, select: { rank: true, xp: true, trustScore: true, createdAt: true } }),
     prisma.achievement.findMany({ where: { isActive: true }, select: { id: true, name: true, condition: true } }),
     prisma.userAchievement.findMany({ where: { userId }, select: { achievementId: true } }),
-    prisma.quest.count({ where: { claimedById: userId, status: 'APPROVED' } }),
+    prisma.questClaim.count({ where: { userId, status: 'APPROVED' } }),
   ])
   if (!user) return []
 

@@ -43,6 +43,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
 
+      const ACTIVE = ['CLAIMED', 'IN_PROGRESS', 'SUBMITTED', 'APPROVED']
+      const affectedQuestIds = (await prisma.questClaim.findMany({
+        where: { userId: id, status: { in: ACTIVE } },
+        select: { questId: true },
+      })).map(c => c.questId)
+
       await prisma.$transaction([
         prisma.account.deleteMany({ where: { userId: id } }),
         prisma.session.deleteMany({ where: { userId: id } }),
@@ -56,10 +62,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         prisma.arenaEntry.deleteMany({ where: { userId: id } }),
         prisma.feedbackReply.deleteMany({ where: { authorId: id } }),
         prisma.feedback.updateMany({ where: { userId: id }, data: { userId: null } }),
-        prisma.quest.updateMany({ where: { claimedById: id }, data: { claimedById: null, status: 'OPEN', claimedAt: null } }),
+        prisma.questSuggestion.deleteMany({ where: { suggestedById: id } }),
+        // QuestClaim rows for this user cascade-delete automatically (onDelete: Cascade).
         prisma.trial.deleteMany({ where: { userId: id } }),
         prisma.user.delete({ where: { id } }),
       ])
+
+      // Freed-up slots can reopen a quest that was FULL.
+      for (const questId of affectedQuestIds) {
+        const quest = await prisma.quest.findUnique({ where: { id: questId } })
+        if (!quest || quest.status !== 'FULL') continue
+        const remaining = await prisma.questClaim.count({ where: { questId, status: { in: ACTIVE } } })
+        if (remaining < quest.maxParticipants) {
+          await prisma.quest.update({ where: { id: questId }, data: { status: 'OPEN' } })
+        }
+      }
 
       return res.json({ ok: true })
     }

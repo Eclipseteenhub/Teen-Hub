@@ -12,6 +12,7 @@ const ROLE_LEVEL: Record<string, number> = {
   GUEST:0,TRIAL_MEMBER:1,ACCEPTED_MEMBER:2,ACTIVE_WORKER:3,
   MODERATOR:4,COORDINATOR:5,ADMIN:6,FOUNDER:7,
 }
+const ACTIVE_CLAIM_STATUSES = ['CLAIMED', 'IN_PROGRESS', 'SUBMITTED', 'APPROVED']
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions)
@@ -19,25 +20,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(403).json({ error: 'Reviewer access required' })
   }
 
-  const { id } = req.query as { id: string }
-  const quest = await prisma.quest.findUnique({ where: { id } })
-  if (!quest) return res.status(404).json({ error: 'Quest not found' })
+  const { id: questId, claimId } = req.query as { id: string; claimId: string }
+  const claim = await prisma.questClaim.findUnique({ where: { id: claimId }, include: { quest: true } })
+  if (!claim || claim.questId !== questId) return res.status(404).json({ error: 'Claim not found' })
 
   // GET = AI pre-screen for the human reviewer. Advisory only — it does not decide.
   if (req.method === 'GET') {
-    if (quest.status !== 'SUBMITTED') return res.status(400).json({ error: 'Quest has not been submitted yet' })
+    if (claim.status !== 'SUBMITTED') return res.status(400).json({ error: 'This claim has not been submitted yet' })
     const aiReview = await reviewSubmission({
-      questTitle: quest.title,
-      instructions: quest.instructions,
-      submissionNote: quest.submissionNote || '',
-      submissionUrl: quest.submissionUrl || undefined,
+      questTitle: claim.quest.title,
+      instructions: claim.quest.instructions,
+      submissionNote: claim.submissionNote || '',
+      submissionUrl: claim.submissionUrl || undefined,
     })
     return res.json({ aiReview })
   }
 
   if (req.method !== 'POST') return res.status(405).end()
-  if (quest.status !== 'SUBMITTED') return res.status(400).json({ error: 'Quest has not been submitted yet' })
-  if (!quest.claimedById) return res.status(400).json({ error: 'Quest has no claimant' })
+  if (claim.status !== 'SUBMITTED') return res.status(400).json({ error: 'This claim has not been submitted yet' })
 
   const { decision, reviewNote, clientRating, clientFeedback } = req.body as {
     decision: 'APPROVE' | 'REJECT'
@@ -48,12 +48,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!['APPROVE', 'REJECT'].includes(decision)) return res.status(400).json({ error: 'decision must be APPROVE or REJECT' })
 
   const rating = clientRating != null ? Math.max(1, Math.min(5, Math.round(clientRating))) : null
-
-  const userId = quest.claimedById
+  const userId = claim.userId
+  const quest = claim.quest
 
   if (decision === 'APPROVE') {
-    await prisma.quest.update({
-      where: { id },
+    await prisma.questClaim.update({
+      where: { id: claim.id },
       data: {
         status: 'APPROVED', reviewedAt: new Date(), reviewNote: reviewNote || null,
         payoutStatus: quest.cashReward ? 'PENDING' : 'NOT_APPLICABLE',
@@ -63,8 +63,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await awardXP(userId, quest.rewardXp, `Quest approved: ${quest.title}`)
     await applyTrustEvent(userId, 'QUEST_APPROVED', `Quest approved: ${quest.title}`, session.user.role)
 
-    // A client rating carries its own trust signal on top of the flat approval
-    // bonus above — a 5-star result should weigh more than a bare pass.
     if (rating != null) {
       const ratingDelta = (rating - 3) * 4 // 5★=+8, 4★=+4, 3★=0, 2★=-4, 1★=-8
       await applyRawTrustDelta(userId, ratingDelta, `Client rated submission ${rating}/5: ${quest.title}`, session.user.role, 'CLIENT_RATING')
@@ -82,28 +80,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       `/dashboard/quest/${quest.id}`
     )
   } else {
-    // Rejected work reopens the quest to the board rather than dead-ending it.
-    await prisma.quest.update({
-      where: { id },
-      data: {
-        status: 'OPEN', claimedById: null, claimedAt: null,
-        submittedAt: null, submissionUrl: null, submissionNote: null,
-        reviewedAt: new Date(), reviewNote: reviewNote || null,
-      },
+    await prisma.questClaim.update({
+      where: { id: claim.id },
+      data: { status: 'REJECTED', reviewedAt: new Date(), reviewNote: reviewNote || null },
     })
     await applyTrustEvent(userId, 'QUEST_ABANDONED', reviewNote || `Submission rejected: ${quest.title}`, session.user.role)
     await prisma.activityLog.create({
-      data: { userId, action: 'QUEST_REJECTED', details: `"${quest.title}" rejected — reopened to board` },
+      data: { userId, action: 'QUEST_REJECTED', details: `"${quest.title}" rejected for one participant` },
     })
     await notify(
       userId,
       'QUEST_REJECTED',
       `Submission rejected: ${quest.title}`,
-      reviewNote || 'Your submission did not meet the requirements. The quest has been reopened.',
+      reviewNote || 'Your submission did not meet the requirements.',
       '/dashboard/quests'
     )
   }
 
-  const updated = await prisma.quest.findUnique({ where: { id } })
-  res.json({ quest: updated })
+  // A rejection frees a slot — if the quest was FULL, it can reopen to the board.
+  if (decision === 'REJECT' && quest.status === 'FULL') {
+    const remainingActive = await prisma.questClaim.count({
+      where: { questId, status: { in: ACTIVE_CLAIM_STATUSES } },
+    })
+    if (remainingActive < quest.maxParticipants) {
+      await prisma.quest.update({ where: { id: questId }, data: { status: 'OPEN' } })
+    }
+  }
+
+  const updated = await prisma.questClaim.findUnique({ where: { id: claim.id } })
+  res.json({ claim: updated })
 }

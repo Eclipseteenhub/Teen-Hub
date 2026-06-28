@@ -17,7 +17,7 @@ const DIFFICULTY_COLOR: Record<string, string> = {
   Expert: 'text-red-400 border-red-500/40',
 }
 
-export default function QuestDetailPage({ quest, isClaimant }: { quest: any; isClaimant: boolean }) {
+export default function QuestDetailPage({ quest, myClaim, slotsFilled, slotsTotal }: { quest: any; myClaim: any; slotsFilled: number; slotsTotal: number }) {
   const router = useRouter()
   const [claiming, setClaiming] = useState(false)
   const [error, setError] = useState('')
@@ -52,10 +52,12 @@ export default function QuestDetailPage({ quest, isClaimant }: { quest: any; isC
     setTimeout(() => router.reload(), 1200)
   }
 
-  const canClaim = quest.status === 'OPEN'
-  const canSubmit = isClaimant && ['CLAIMED', 'IN_PROGRESS'].includes(quest.status)
-  const isSubmitted = isClaimant && quest.status === 'SUBMITTED'
-  const isApproved = isClaimant && quest.status === 'APPROVED'
+  const slotsAvailable = quest.status === 'OPEN' && slotsFilled < slotsTotal
+  const canClaim = slotsAvailable && !myClaim
+  const canSubmit = myClaim && ['CLAIMED', 'IN_PROGRESS'].includes(myClaim.status)
+  const isSubmitted = myClaim?.status === 'SUBMITTED'
+  const isApproved = myClaim?.status === 'APPROVED'
+  const isRejected = myClaim?.status === 'REJECTED'
 
   return (
     <>
@@ -85,13 +87,20 @@ export default function QuestDetailPage({ quest, isClaimant }: { quest: any; isC
               <span className="font-orbitron text-[9px] border border-slate-700 text-slate-500 px-2 py-0.5 tracking-widest">
                 Rank {quest.rankRequired}+
               </span>
+              {slotsTotal > 1 && (
+                <span className="font-orbitron text-[9px] border border-blue-500/30 text-blue-400 px-2 py-0.5 tracking-widest">
+                  {slotsFilled}/{slotsTotal} SLOTS FILLED
+                </span>
+              )}
               <span className={`font-orbitron text-[9px] px-2 py-0.5 tracking-widest border ${
-                quest.status === 'OPEN' ? 'text-green-400 border-green-500/40' :
-                quest.status === 'APPROVED' ? 'text-blue-400 border-blue-500/40' :
-                quest.status === 'SUBMITTED' ? 'text-purple-400 border-purple-500/40' :
-                'text-slate-500 border-slate-700'
+                myClaim ? (
+                  myClaim.status === 'APPROVED' ? 'text-green-400 border-green-500/40' :
+                  myClaim.status === 'REJECTED' ? 'text-red-400 border-red-500/40' :
+                  myClaim.status === 'SUBMITTED' ? 'text-purple-400 border-purple-500/40' :
+                  'text-yellow-400 border-yellow-500/40'
+                ) : quest.status === 'OPEN' ? 'text-green-400 border-green-500/40' : 'text-slate-500 border-slate-700'
               }`}>
-                {quest.status.replace('_', ' ')}
+                {myClaim ? myClaim.status.replace('_', ' ') : quest.status}
               </span>
             </div>
 
@@ -138,7 +147,7 @@ export default function QuestDetailPage({ quest, isClaimant }: { quest: any; isC
               </div>
             )}
 
-            {/* ── Submission form — this is what was missing entirely ── */}
+            {/* ── Submission form ── */}
             {canSubmit && (
               <div className="mb-6 p-4 border border-blue-500/20 bg-blue-950/10">
                 <h3 className="font-orbitron text-xs text-blue-400 tracking-widest uppercase mb-3">Submit Your Results</h3>
@@ -156,10 +165,10 @@ export default function QuestDetailPage({ quest, isClaimant }: { quest: any; isC
               <div className="mb-6 p-4 border border-purple-500/20 bg-purple-950/10">
                 <h3 className="font-orbitron text-xs text-purple-400 tracking-widest uppercase mb-2">Awaiting Review</h3>
                 <p className="font-rajdhani text-sm text-slate-400">
-                  Your submission was sent on {quest.submittedAt ? new Date(quest.submittedAt).toLocaleString() : 'recently'}. You'll be notified once it's reviewed.
+                  Your submission was sent on {myClaim.submittedAt ? new Date(myClaim.submittedAt).toLocaleString() : 'recently'}. You'll be notified once it's reviewed.
                 </p>
-                {quest.submissionNote && (
-                  <p className="font-rajdhani text-sm text-slate-500 mt-2 italic">"{quest.submissionNote}"</p>
+                {myClaim.submissionNote && (
+                  <p className="font-rajdhani text-sm text-slate-500 mt-2 italic">"{myClaim.submissionNote}"</p>
                 )}
               </div>
             )}
@@ -168,20 +177,28 @@ export default function QuestDetailPage({ quest, isClaimant }: { quest: any; isC
               <div className="mb-6 p-4 border border-green-500/20 bg-green-950/10">
                 <h3 className="font-orbitron text-xs text-green-400 tracking-widest uppercase mb-2">Approved ✓</h3>
                 <p className="font-rajdhani text-sm text-slate-400">+{quest.rewardXp} XP awarded.</p>
-                {quest.clientRating != null && (
+                {myClaim.clientRating != null && (
                   <div className="flex items-center gap-1 mt-2">
                     {[1,2,3,4,5].map(n => (
-                      <span key={n} className={n <= quest.clientRating ? 'text-amber-400' : 'text-slate-700'}>★</span>
+                      <span key={n} className={n <= myClaim.clientRating ? 'text-amber-400' : 'text-slate-700'}>★</span>
                     ))}
                     <span className="font-rajdhani text-xs text-slate-500 ml-1">Client rating</span>
                   </div>
                 )}
-                {quest.clientFeedback && (
-                  <p className="font-rajdhani text-sm text-slate-400 mt-2 italic">"{quest.clientFeedback}"</p>
+                {myClaim.clientFeedback && (
+                  <p className="font-rajdhani text-sm text-slate-400 mt-2 italic">"{myClaim.clientFeedback}"</p>
                 )}
-                {quest.reviewNote && (
-                  <p className="font-rajdhani text-sm text-slate-500 mt-2">{quest.reviewNote}</p>
+                {myClaim.reviewNote && (
+                  <p className="font-rajdhani text-sm text-slate-500 mt-2">{myClaim.reviewNote}</p>
                 )}
+              </div>
+            )}
+
+            {isRejected && (
+              <div className="mb-6 p-4 border border-red-500/20 bg-red-950/10">
+                <h3 className="font-orbitron text-xs text-red-400 tracking-widest uppercase mb-2">Not Approved</h3>
+                {myClaim.reviewNote && <p className="font-rajdhani text-sm text-slate-400 mt-1">{myClaim.reviewNote}</p>}
+                <p className="font-rajdhani text-xs text-slate-600 mt-2">Other slots on this quest may still be open if you'd like to try again.</p>
               </div>
             )}
 
@@ -190,6 +207,9 @@ export default function QuestDetailPage({ quest, isClaimant }: { quest: any; isC
                 <GlowButton variant="primary" size="md" loading={claiming} onClick={handleClaim}>
                   Apply for Quest
                 </GlowButton>
+              )}
+              {!slotsAvailable && !myClaim && quest.status !== 'CLOSED' && (
+                <p className="font-rajdhani text-sm text-slate-500">All slots for this quest are currently filled.</p>
               )}
               <GlowButton variant="ghost" size="md" onClick={() => router.back()}>
                 Back
@@ -211,10 +231,18 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
   const quest = await prisma.quest.findUnique({ where: { id } })
   if (!quest) return { notFound: true }
 
+  const ACTIVE = ['CLAIMED', 'IN_PROGRESS', 'SUBMITTED', 'APPROVED']
+  const [myClaim, slotsFilled] = await Promise.all([
+    session?.user ? prisma.questClaim.findUnique({ where: { questId_userId: { questId: id, userId: session.user.id } } }) : null,
+    prisma.questClaim.count({ where: { questId: id, status: { in: ACTIVE } } }),
+  ])
+
   return {
     props: {
       quest: JSON.parse(JSON.stringify(quest)),
-      isClaimant: !!session?.user && quest.claimedById === session.user.id,
+      myClaim: myClaim ? JSON.parse(JSON.stringify(myClaim)) : null,
+      slotsFilled,
+      slotsTotal: quest.maxParticipants,
     },
   }
 }

@@ -7,6 +7,7 @@ interface Message {
   content: string
   questDraft?: Record<string, unknown> | null
   debug?: string
+  suggestionSent?: boolean
 }
 
 const SUGGESTIONS = [
@@ -23,6 +24,7 @@ export default function AIChatWidget() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [suggesting, setSuggesting] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -98,7 +100,43 @@ export default function AIChatWidget() {
     }
   }
 
+  async function suggestQuestFromDraft(draft: Record<string, unknown>) {
+    setSuggesting(true)
+    try {
+      const res = await fetch('/api/quests/suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: '✗ Failed to send suggestion.', debug: data.error || `Server returned ${res.status}` },
+        ])
+        return
+      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: '✓ Sent to the Founder for review. A chat thread has been opened so you can discuss terms — check your notifications or Messages.',
+          suggestionSent: true,
+        },
+      ])
+    } catch (err: any) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: '✗ Failed to send suggestion.', debug: err?.message || 'Network request failed' }])
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
   const isFounder = session?.user?.role === 'FOUNDER'
+  const ROLE_LEVEL: Record<string, number> = {
+    GUEST: 0, TRIAL_MEMBER: 1, ACCEPTED_MEMBER: 2, ACTIVE_WORKER: 3,
+    MODERATOR: 4, COORDINATOR: 5, ADMIN: 6, FOUNDER: 7,
+  }
+  const canSuggest = !isFounder && ROLE_LEVEL[session?.user?.role || 'GUEST'] >= ROLE_LEVEL['ACCEPTED_MEMBER']
 
   return (
     <>
@@ -155,7 +193,7 @@ export default function AIChatWidget() {
                     </div>
                   )}
 
-                  {/* Quest draft creation button */}
+                  {/* Quest draft creation button — Founder only */}
                   {m.questDraft && isFounder && (
                     <div className="mt-2 pt-2 border-t border-purple-500/20">
                       <div className="font-orbitron text-[8px] text-purple-400 mb-1.5 tracking-widest">QUEST DRAFT READY</div>
@@ -168,6 +206,23 @@ export default function AIChatWidget() {
                         className="font-orbitron text-[9px] bg-purple-700/50 hover:bg-purple-600/60 border border-purple-500/40 text-white px-3 py-1.5 transition-all disabled:opacity-50"
                       >
                         {creating ? 'CREATING...' : '+ CREATE QUEST'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Quest draft suggestion button — everyone else who's an accepted member */}
+                  {m.questDraft && canSuggest && !m.suggestionSent && (
+                    <div className="mt-2 pt-2 border-t border-purple-500/20">
+                      <div className="font-orbitron text-[8px] text-purple-400 mb-1.5 tracking-widest">QUEST IDEA READY</div>
+                      <div className="font-rajdhani text-xs text-slate-400 mb-2">
+                        <strong className="text-white">{String(m.questDraft.title)}</strong> · {String(m.questDraft.category)} · {String(m.questDraft.difficulty)}
+                      </div>
+                      <button
+                        onClick={() => suggestQuestFromDraft(m.questDraft as Record<string, unknown>)}
+                        disabled={suggesting}
+                        className="font-orbitron text-[9px] bg-amber-700/40 hover:bg-amber-600/50 border border-amber-500/40 text-amber-200 px-3 py-1.5 transition-all disabled:opacity-50"
+                      >
+                        {suggesting ? 'SENDING...' : '→ SUGGEST TO FOUNDER'}
                       </button>
                     </div>
                   )}

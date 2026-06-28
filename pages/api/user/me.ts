@@ -13,10 +13,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       trial: true,
       xpLogs: { orderBy: { createdAt: 'desc' }, take: 10 },
       activityLogs: { orderBy: { createdAt: 'desc' }, take: 20 },
-      questsClaimed: {
+      questClaims: {
         where: { status: { in: ['CLAIMED', 'IN_PROGRESS', 'SUBMITTED'] } },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { claimedAt: 'desc' },
         take: 5,
+        include: { quest: { select: { id: true, title: true, rewardXp: true, cashReward: true } } },
       },
       warnings: { orderBy: { createdAt: 'desc' }, take: 5 },
     },

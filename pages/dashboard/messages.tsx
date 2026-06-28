@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import Head from 'next/head'
 import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/router'
 import { GetServerSideProps } from 'next'
 import { requireAuth, hasMinRole } from '@/lib/middleware'
 import { getServerSession } from 'next-auth'
@@ -11,6 +12,7 @@ const RANK_LEVEL: Record<string, number> = { F:0,E:1,D:2,C:3,B:4,A:5,S:6,SS:7,SS
 
 export default function MessagesPage({ locked, lockReason }: { locked: boolean; lockReason?: string }) {
   const { data: session } = useSession()
+  const router = useRouter()
   const [conversations, setConversations] = useState<any[]>([])
   const [activeConv, setActiveConv] = useState<any>(null)
   const [messages, setMessages] = useState<any[]>([])
@@ -25,6 +27,17 @@ export default function MessagesPage({ locked, lockReason }: { locked: boolean; 
       .then(data => { setConversations(data.conversations || []); setLoading(false) })
       .catch(() => setLoading(false))
   }, [locked])
+
+  // Deep link support: /dashboard/messages?with=<userId>&name=<name> opens
+  // (or starts) that thread directly — used by quest-suggestion notifications
+  // so a member/Founder lands straight in the right conversation.
+  useEffect(() => {
+    if (locked || !router.isReady) return
+    const withId = router.query.with as string | undefined
+    if (!withId) return
+    const name = (router.query.name as string) || 'Member'
+    openConv({ userId: withId, name })
+  }, [locked, router.isReady, router.query.with])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })

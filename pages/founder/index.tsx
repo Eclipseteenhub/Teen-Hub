@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import Head from 'next/head'
+import Link from 'next/link'
 import { GetServerSideProps } from 'next'
 import { requireAuth } from '@/lib/middleware'
 import DashboardLayout from '@/components/dashboard/DashboardLayout'
@@ -11,7 +12,7 @@ import GlowButton from '@/components/ui/GlowButton'
 const TAB_GROUPS = [
   { label: 'Command', tabs: ['Overview'] },
   { label: 'People', tabs: ['Users', 'Trials', 'Admins'] },
-  { label: 'Content', tabs: ['Quests', 'Arena', 'Posts', 'Achievements', 'Titles'] },
+  { label: 'Content', tabs: ['Quests', 'Suggestions', 'Arena', 'Posts', 'Achievements', 'Titles'] },
   { label: 'Trust & Safety', tabs: ['Trust', 'AI Alerts', 'Feedback'] },
   { label: 'Operations', tabs: ['Feature Unlock', 'Payouts', 'Settings'] },
 ]
@@ -27,6 +28,7 @@ export default function FounderDashboard() {
   const [stats, setStats] = useState<any>(null)
   const [users, setUsers] = useState<any[]>([])
   const [quests, setQuests] = useState<any[]>([])
+  const [suggestions, setSuggestions] = useState<any[]>([])
   const [trials, setTrials] = useState<any[]>([])
   const [trialTasks, setTrialTasks] = useState<any[]>([])
   const [admins, setAdmins] = useState<any[]>([])
@@ -70,7 +72,7 @@ export default function FounderDashboard() {
   const [awardTitleUserId, setAwardTitleUserId] = useState('')
 
   // Forms
-  const [questForm, setQuestForm] = useState({ title:'',category:'Design',difficulty:'Medium',rankRequired:'F',rewardXp:'100',cashReward:'',instructions:'',deadline:'' })
+  const [questForm, setQuestForm] = useState({ title:'',category:'Design',difficulty:'Medium',rankRequired:'F',rewardXp:'100',cashReward:'',instructions:'',deadline:'',maxParticipants:'1' })
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, { rating: number; feedback: string; note: string }>>({})
   const [aiPreScreens, setAiPreScreens] = useState<Record<string, any>>({})
   const [reviewLoading, setReviewLoading] = useState<string | null>(null)
@@ -101,7 +103,7 @@ export default function FounderDashboard() {
 
   async function loadAll() {
     setLoading(true)
-    const [s,u,q,t,a,ar,ach,ti,po,fb,fu,al,pay] = await Promise.all([
+    const [s,u,q,t,a,ar,ach,ti,po,fb,fu,al,pay,sug] = await Promise.all([
       fetch('/api/founder/stats').then(r=>r.json()).catch(()=>({})),
       fetch('/api/founder/users').then(r=>r.json()).catch(()=>({users:[]})),
       fetch('/api/founder/quests').then(r=>r.json()).catch(()=>({quests:[]})),
@@ -114,7 +116,8 @@ export default function FounderDashboard() {
       fetch('/api/feedback').then(r=>r.json()).catch(()=>({feedbacks:[]})),
       fetch('/api/founder/feature-unlock').then(r=>r.json()).catch(()=>({unlocks:[],features:[]})),
       fetch('/api/founder/alerts').then(r=>r.json()).catch(()=>({flaggedChat:[],flaggedDMs:[],unresolvedReports:[],recentWarnings:[],riskyUsers:[]})),
-      fetch('/api/founder/payouts').then(r=>r.json()).catch(()=>({quests:[],totalPending:0,totalPaid:0,pendingCount:0,paidCount:0})),
+      fetch('/api/founder/payouts').then(r=>r.json()).catch(()=>({claims:[],totalPending:0,totalPaid:0,pendingCount:0,paidCount:0})),
+      fetch('/api/quests/suggestions').then(r=>r.json()).catch(()=>({suggestions:[]})),
     ])
     setStats(s)
     setUsers(u.users || [])
@@ -131,6 +134,7 @@ export default function FounderDashboard() {
     setFeatures(fu.features || [])
     setAlerts(al || {})
     setPayouts(pay || {})
+    setSuggestions(sug.suggestions || [])
     setLoading(false)
   }
 
@@ -198,21 +202,21 @@ export default function FounderDashboard() {
     setReviewDrafts(prev => ({ ...prev, [id]: { ...draftFor(id), ...patch } }))
   }
 
-  async function runAiPreScreen(id: string) {
-    setReviewLoading(id + ':ai')
+  async function runAiPreScreen(questId: string, claimId: string) {
+    setReviewLoading(claimId + ':ai')
     try {
-      const res = await fetch(`/api/quests/${id}/review`)
+      const res = await fetch(`/api/quests/${questId}/claims/${claimId}/review`)
       const data = await res.json()
-      setAiPreScreens(prev => ({ ...prev, [id]: data.aiReview || data.error }))
+      setAiPreScreens(prev => ({ ...prev, [claimId]: data.aiReview || data.error }))
     } finally {
       setReviewLoading(null)
     }
   }
 
-  async function submitQuestReview(id: string, decision: 'APPROVE' | 'REJECT') {
-    const draft = draftFor(id)
-    setReviewLoading(id + ':' + decision)
-    const res = await fetch(`/api/quests/${id}/review`, {
+  async function submitQuestReview(questId: string, claimId: string, decision: 'APPROVE' | 'REJECT') {
+    const draft = draftFor(claimId)
+    setReviewLoading(claimId + ':' + decision)
+    const res = await fetch(`/api/quests/${questId}/claims/${claimId}/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -225,8 +229,8 @@ export default function FounderDashboard() {
     const data = await res.json().catch(() => ({}))
     setReviewLoading(null)
     if (!res.ok) { msg(`Error: ${data.error || 'Failed to submit review.'}`); return }
-    msg(decision === 'APPROVE' ? 'Quest approved — member notified.' : 'Quest rejected and reopened to the board.')
-    setReviewDrafts(prev => { const next = { ...prev }; delete next[id]; return next })
+    msg(decision === 'APPROVE' ? 'Quest approved — member notified.' : 'Submission rejected — slot reopened if needed.')
+    setReviewDrafts(prev => { const next = { ...prev }; delete next[claimId]; return next })
     loadAll()
   }
 
@@ -240,6 +244,20 @@ export default function FounderDashboard() {
     loadAll()
   }
 
+  async function decideSuggestion(id: string, action: 'approve' | 'decline', founderNote?: string) {
+    setReviewLoading(id + ':' + action)
+    const res = await fetch(`/api/quests/suggestions/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, founderNote }),
+    })
+    const data = await res.json().catch(() => ({}))
+    setReviewLoading(null)
+    if (!res.ok) { msg(`Error: ${data.error || 'Failed to update suggestion.'}`); return }
+    msg(action === 'approve' ? 'Suggestion approved and posted to the Quest Board.' : 'Suggestion declined — member notified.')
+    loadAll()
+  }
+
   async function postQuest() {
     setSaving(true)
     await fetch('/api/founder/quests', {
@@ -248,7 +266,7 @@ export default function FounderDashboard() {
       body: JSON.stringify(questForm),
     })
     setSaving(false)
-    setQuestForm({ title:'',category:'Design',difficulty:'Medium',rankRequired:'F',rewardXp:'100',cashReward:'',instructions:'',deadline:'' })
+    setQuestForm({ title:'',category:'Design',difficulty:'Medium',rankRequired:'F',rewardXp:'100',cashReward:'',instructions:'',deadline:'',maxParticipants:'1' })
     msg('Quest posted.')
     loadAll()
   }
@@ -454,6 +472,11 @@ export default function FounderDashboard() {
                         {t === 'Payouts' && stats?.pendingPayoutCount > 0 && (
                           <span className="font-orbitron text-[8px] bg-amber-500/80 text-black rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
                             {stats.pendingPayoutCount}
+                          </span>
+                        )}
+                        {t === 'Suggestions' && stats?.pendingSuggestions > 0 && (
+                          <span className="font-orbitron text-[8px] bg-amber-500/80 text-black rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+                            {stats.pendingSuggestions}
                           </span>
                         )}
                       </button>
@@ -713,6 +736,9 @@ export default function FounderDashboard() {
                         <div>
                           <GlowInput label="Cash Reward ($, optional)" type="number" placeholder="0.00" value={questForm.cashReward} onChange={e=>setQuestForm(p=>({...p,cashReward:e.target.value}))} />
                         </div>
+                        <div>
+                          <GlowInput label="Max Participants" type="number" placeholder="1" value={questForm.maxParticipants} onChange={e=>setQuestForm(p=>({...p,maxParticipants:e.target.value}))} />
+                        </div>
                       </div>
                       <div>
                         <label className="font-orbitron text-[9px] text-purple-300/70 tracking-widest uppercase block mb-1.5">Deadline (optional)</label>
@@ -724,126 +750,198 @@ export default function FounderDashboard() {
                     </div>
                   </div>
 
-                  {/* Submissions awaiting review */}
-                  {quests.filter((q: any) => q.status === 'SUBMITTED').length > 0 && (
-                    <div className="lg:col-span-2 bg-[#0d0017] border border-blue-500/25 p-5">
-                      <h3 className="font-orbitron text-xs text-blue-400 tracking-widest uppercase mb-5 pb-3 border-b border-blue-500/20">
-                        Submissions Awaiting Review ({quests.filter((q: any) => q.status === 'SUBMITTED').length})
-                      </h3>
-                      <div className="flex flex-col gap-4">
-                        {quests.filter((q: any) => q.status === 'SUBMITTED').map((q: any) => {
-                          const draft = draftFor(q.id)
-                          const ai = aiPreScreens[q.id]
-                          return (
-                            <div key={q.id} className="border border-blue-500/15 p-4">
-                              <div className="flex items-start justify-between gap-3 mb-3">
-                                <div className="min-w-0">
-                                  <div className="font-orbitron text-sm text-white">{q.title}</div>
-                                  <div className="font-rajdhani text-xs text-slate-500 mt-0.5">
-                                    Submitted by {q.claimedBy?.nickname || q.claimedBy?.name || 'Unknown'} · {q.submittedAt ? new Date(q.submittedAt).toLocaleString() : ''}
+                  {/* Submissions awaiting review — flattened across every quest's claims */}
+                  {(() => {
+                    const pendingClaims = quests.flatMap((q: any) => (q.claims || []).filter((c: any) => c.status === 'SUBMITTED').map((c: any) => ({ ...c, quest: q })))
+                    if (pendingClaims.length === 0) return null
+                    return (
+                      <div className="lg:col-span-2 bg-[#0d0017] border border-blue-500/25 p-5">
+                        <h3 className="font-orbitron text-xs text-blue-400 tracking-widest uppercase mb-5 pb-3 border-b border-blue-500/20">
+                          Submissions Awaiting Review ({pendingClaims.length})
+                        </h3>
+                        <div className="flex flex-col gap-4">
+                          {pendingClaims.map((c: any) => {
+                            const draft = draftFor(c.id)
+                            const ai = aiPreScreens[c.id]
+                            return (
+                              <div key={c.id} className="border border-blue-500/15 p-4">
+                                <div className="flex items-start justify-between gap-3 mb-3">
+                                  <div className="min-w-0">
+                                    <div className="font-orbitron text-sm text-white">{c.quest.title}</div>
+                                    <div className="font-rajdhani text-xs text-slate-500 mt-0.5">
+                                      Submitted by {c.user?.nickname || c.user?.name || 'Unknown'} · {c.submittedAt ? new Date(c.submittedAt).toLocaleString() : ''}
+                                    </div>
                                   </div>
+                                  <button
+                                    onClick={() => runAiPreScreen(c.quest.id, c.id)}
+                                    disabled={reviewLoading === c.id + ':ai'}
+                                    className="font-orbitron text-[9px] px-3 py-1.5 border border-purple-500/40 text-purple-300 hover:bg-purple-900/20 transition-all whitespace-nowrap disabled:opacity-50">
+                                    {reviewLoading === c.id + ':ai' ? 'SCANNING…' : 'AI PRE-SCREEN'}
+                                  </button>
                                 </div>
-                                <button
-                                  onClick={() => runAiPreScreen(q.id)}
-                                  disabled={reviewLoading === q.id + ':ai'}
-                                  className="font-orbitron text-[9px] px-3 py-1.5 border border-purple-500/40 text-purple-300 hover:bg-purple-900/20 transition-all whitespace-nowrap disabled:opacity-50">
-                                  {reviewLoading === q.id + ':ai' ? 'SCANNING…' : 'AI PRE-SCREEN'}
-                                </button>
-                              </div>
 
-                              <div className="bg-black/30 border border-blue-500/10 p-3 mb-3">
-                                <div className="font-orbitron text-[9px] text-slate-600 tracking-widest uppercase mb-1">Submission Note</div>
-                                <p className="font-rajdhani text-sm text-slate-300 whitespace-pre-wrap">{q.submissionNote}</p>
-                                {q.submissionUrl && (
-                                  <a href={q.submissionUrl} target="_blank" rel="noopener noreferrer" className="font-rajdhani text-sm text-purple-400 hover:text-purple-300 underline mt-1.5 inline-block break-all">
-                                    {q.submissionUrl}
-                                  </a>
-                                )}
-                              </div>
-
-                              {ai && (
-                                <div className="bg-purple-950/20 border border-purple-500/20 p-3 mb-3">
-                                  <div className="font-orbitron text-[9px] text-purple-400 tracking-widest uppercase mb-1">AI Advisory (not a decision)</div>
-                                  {typeof ai === 'string' ? (
-                                    <p className="font-rajdhani text-sm text-slate-400">{ai}</p>
-                                  ) : (
-                                    <>
-                                      <span className={`font-orbitron text-[10px] px-2 py-0.5 border ${ai.recommendation === 'ACCEPT' ? 'text-green-400 border-green-500/40' : ai.recommendation === 'REJECT' ? 'text-red-400 border-red-500/40' : 'text-yellow-400 border-yellow-500/40'}`}>
-                                        {ai.recommendation || 'REVIEW'}
-                                      </span>
-                                      {ai.summary && <p className="font-rajdhani text-sm text-slate-400 mt-2">{ai.summary}</p>}
-                                    </>
+                                <div className="bg-black/30 border border-blue-500/10 p-3 mb-3">
+                                  <div className="font-orbitron text-[9px] text-slate-600 tracking-widest uppercase mb-1">Submission Note</div>
+                                  <p className="font-rajdhani text-sm text-slate-300 whitespace-pre-wrap">{c.submissionNote}</p>
+                                  {c.submissionUrl && (
+                                    <a href={c.submissionUrl} target="_blank" rel="noopener noreferrer" className="font-rajdhani text-sm text-purple-400 hover:text-purple-300 underline mt-1.5 inline-block break-all">
+                                      {c.submissionUrl}
+                                    </a>
                                   )}
                                 </div>
-                              )}
 
-                              <div className="grid sm:grid-cols-2 gap-3 mb-3">
-                                <div>
-                                  <label className="font-orbitron text-[9px] text-amber-400/70 tracking-widest uppercase block mb-1.5">Client Rating (optional)</label>
-                                  <div className="flex items-center gap-1">
-                                    {[1,2,3,4,5].map(n => (
-                                      <button key={n} onClick={() => setDraft(q.id, { rating: draft.rating === n ? 0 : n })}
-                                        className={`text-2xl leading-none transition-all ${n <= draft.rating ? 'text-amber-400' : 'text-slate-700 hover:text-slate-500'}`}>
-                                        ★
-                                      </button>
-                                    ))}
-                                    {draft.rating > 0 && <span className="font-rajdhani text-xs text-slate-500 ml-2">{draft.rating}/5</span>}
+                                {ai && (
+                                  <div className="bg-purple-950/20 border border-purple-500/20 p-3 mb-3">
+                                    <div className="font-orbitron text-[9px] text-purple-400 tracking-widest uppercase mb-1">AI Advisory (not a decision)</div>
+                                    {typeof ai === 'string' ? (
+                                      <p className="font-rajdhani text-sm text-slate-400">{ai}</p>
+                                    ) : (
+                                      <>
+                                        <span className={`font-orbitron text-[10px] px-2 py-0.5 border ${ai.recommendation === 'ACCEPT' ? 'text-green-400 border-green-500/40' : ai.recommendation === 'REJECT' ? 'text-red-400 border-red-500/40' : 'text-yellow-400 border-yellow-500/40'}`}>
+                                          {ai.recommendation || 'REVIEW'}
+                                        </span>
+                                        {ai.summary && <p className="font-rajdhani text-sm text-slate-400 mt-2">{ai.summary}</p>}
+                                      </>
+                                    )}
+                                  </div>
+                                )}
+
+                                <div className="grid sm:grid-cols-2 gap-3 mb-3">
+                                  <div>
+                                    <label className="font-orbitron text-[9px] text-amber-400/70 tracking-widest uppercase block mb-1.5">Client Rating (optional)</label>
+                                    <div className="flex items-center gap-1">
+                                      {[1,2,3,4,5].map(n => (
+                                        <button key={n} onClick={() => setDraft(c.id, { rating: draft.rating === n ? 0 : n })}
+                                          className={`text-2xl leading-none transition-all ${n <= draft.rating ? 'text-amber-400' : 'text-slate-700 hover:text-slate-500'}`}>
+                                          ★
+                                        </button>
+                                      ))}
+                                      {draft.rating > 0 && <span className="font-rajdhani text-xs text-slate-500 ml-2">{draft.rating}/5</span>}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <GlowInput label="What the client said (optional)" placeholder="e.g. Loved the design, fast turnaround" value={draft.feedback} onChange={(e: any) => setDraft(c.id, { feedback: e.target.value })} />
                                   </div>
                                 </div>
-                                <div>
-                                  <GlowInput label="What the client said (optional)" placeholder="e.g. Loved the design, fast turnaround" value={draft.feedback} onChange={(e: any) => setDraft(q.id, { feedback: e.target.value })} />
+
+                                <GlowTextarea label="Review Note (shown to member)" placeholder="Reason for approval/rejection..." rows={2} value={draft.note} onChange={(e: any) => setDraft(c.id, { note: e.target.value })} />
+
+                                <div className="flex gap-2 mt-3">
+                                  <button onClick={() => submitQuestReview(c.quest.id, c.id, 'APPROVE')} disabled={!!reviewLoading}
+                                    className="font-orbitron text-[10px] px-4 py-2 border border-green-500/40 text-green-400 hover:bg-green-900/20 transition-all disabled:opacity-50">
+                                    {reviewLoading === c.id + ':APPROVE' ? 'APPROVING…' : 'APPROVE'}
+                                  </button>
+                                  <button onClick={() => submitQuestReview(c.quest.id, c.id, 'REJECT')} disabled={!!reviewLoading}
+                                    className="font-orbitron text-[10px] px-4 py-2 border border-red-500/40 text-red-400 hover:bg-red-900/20 transition-all disabled:opacity-50">
+                                    {reviewLoading === c.id + ':REJECT' ? 'REJECTING…' : 'REJECT'}
+                                  </button>
                                 </div>
                               </div>
-
-                              <GlowTextarea label="Review Note (shown to member)" placeholder="Reason for approval/rejection..." rows={2} value={draft.note} onChange={(e: any) => setDraft(q.id, { note: e.target.value })} />
-
-                              <div className="flex gap-2 mt-3">
-                                <button onClick={() => submitQuestReview(q.id, 'APPROVE')} disabled={!!reviewLoading}
-                                  className="font-orbitron text-[10px] px-4 py-2 border border-green-500/40 text-green-400 hover:bg-green-900/20 transition-all disabled:opacity-50">
-                                  {reviewLoading === q.id + ':APPROVE' ? 'APPROVING…' : 'APPROVE'}
-                                </button>
-                                <button onClick={() => submitQuestReview(q.id, 'REJECT')} disabled={!!reviewLoading}
-                                  className="font-orbitron text-[10px] px-4 py-2 border border-red-500/40 text-red-400 hover:bg-red-900/20 transition-all disabled:opacity-50">
-                                  {reviewLoading === q.id + ':REJECT' ? 'REJECTING…' : 'REJECT'}
-                                </button>
-                              </div>
-                            </div>
-                          )
-                        })}
+                            )
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  })()}
 
                   {/* Existing quests */}
-                  <div className="bg-[#0d0017] border border-purple-500/20 p-5">
+                  <div className="bg-[#0d0017] border border-purple-500/20 p-5 lg:col-span-2">
                     <h3 className="font-orbitron text-xs text-white tracking-widest uppercase mb-5 pb-3 border-b border-purple-500/15">
                       All Quests ({quests.length})
                     </h3>
                     <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto">
                       {quests.length === 0 ? (
                         <p className="font-rajdhani text-slate-600 text-sm text-center py-8">No quests posted yet.</p>
-                      ) : quests.map((q:any) => (
+                      ) : quests.map((q:any) => {
+                        const ACTIVE = ['CLAIMED','IN_PROGRESS','SUBMITTED','APPROVED']
+                        const slotsFilled = (q.claims || []).filter((c: any) => ACTIVE.includes(c.status)).length
+                        return (
                         <div key={q.id} className="border border-purple-500/15 p-3 flex items-start justify-between gap-3">
                           <div className="flex-1 min-w-0">
                             <div className="font-orbitron text-xs text-white truncate">{q.title}</div>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
                               <span className="font-orbitron text-[9px] text-purple-400/70">{q.category}</span>
                               <span className="font-orbitron text-[9px] text-slate-600">{q.difficulty}</span>
-                              <span className={`font-orbitron text-[9px] ${q.status==='OPEN'?'text-green-400':'text-yellow-400'}`}>{q.status}</span>
+                              <span className={`font-orbitron text-[9px] ${q.status==='OPEN'?'text-green-400':q.status==='FULL'?'text-yellow-400':'text-slate-500'}`}>{q.status}</span>
+                              <span className="font-orbitron text-[9px] text-blue-400">{slotsFilled}/{q.maxParticipants} slots</span>
                             </div>
                           </div>
                           <div className="flex flex-col gap-1 flex-shrink-0">
-                            {q.status === 'OPEN' && (
+                            {q.status !== 'CLOSED' ? (
                               <button onClick={async()=>{await fetch(`/api/founder/quests`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:q.id})});loadAll()}}
                                 className="font-orbitron text-[8px] px-2 py-1 border border-red-500/30 text-red-400 hover:bg-red-900/20 transition-all">
                                 REMOVE
                               </button>
-                            )}
+                            ) : null}
                           </div>
                         </div>
-                      ))}
+                      )})}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* ── SUGGESTIONS TAB ── */}
+              {tab === 'Suggestions' && (
+                <div className="flex flex-col gap-4">
+                  {suggestions.length === 0 ? (
+                    <div className="bg-[#0d0017] border border-amber-500/20 p-10 text-center">
+                      <p className="font-rajdhani text-slate-600">No quest suggestions yet. Members can suggest quest ideas to you via SENTINEL.</p>
+                    </div>
+                  ) : suggestions.map((s: any) => (
+                    <div key={s.id} className="bg-[#0d0017] border border-amber-500/20 p-5">
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div>
+                          <div className="font-orbitron text-sm text-white">{s.title}</div>
+                          <div className="font-rajdhani text-xs text-slate-500 mt-0.5">
+                            Suggested by {s.suggestedBy?.nickname || s.suggestedBy?.name || 'Unknown'} · {new Date(s.createdAt).toLocaleString()}
+                          </div>
+                        </div>
+                        <span className={`font-orbitron text-[9px] px-2 py-0.5 border tracking-widest ${
+                          s.status === 'PENDING' ? 'text-yellow-400 border-yellow-500/40' :
+                          s.status === 'DISCUSSING' ? 'text-blue-400 border-blue-500/40' :
+                          s.status === 'APPROVED' ? 'text-green-400 border-green-500/40' :
+                          'text-red-400 border-red-500/40'
+                        }`}>
+                          {s.status}
+                        </span>
+                      </div>
+
+                      <div className="grid sm:grid-cols-2 gap-3 mb-3 text-sm">
+                        <div className="font-rajdhani text-slate-400">Category: <span className="text-slate-200">{s.category}</span></div>
+                        <div className="font-rajdhani text-slate-400">Difficulty: <span className="text-slate-200">{s.difficulty}</span></div>
+                        <div className="font-rajdhani text-slate-400">Rank: <span className="text-slate-200">{s.rankRequired}+</span></div>
+                        <div className="font-rajdhani text-slate-400">XP: <span className="text-slate-200">{s.rewardXp}</span></div>
+                        {s.cashReward != null && <div className="font-rajdhani text-slate-400">Cash: <span className="text-amber-300">${s.cashReward}</span></div>}
+                        <div className="font-rajdhani text-slate-400">Slots: <span className="text-slate-200">{s.maxParticipants}</span></div>
+                      </div>
+
+                      <div className="bg-black/30 border border-amber-500/10 p-3 mb-3">
+                        <p className="font-rajdhani text-sm text-slate-300 whitespace-pre-wrap">{s.instructions}</p>
+                      </div>
+
+                      {s.founderNote && (
+                        <p className="font-rajdhani text-xs text-slate-500 mb-3">Your note: {s.founderNote}</p>
+                      )}
+
+                      {(s.status === 'PENDING' || s.status === 'DISCUSSING') && (
+                        <div className="flex flex-wrap gap-2">
+                          <Link href={`/dashboard/messages?with=${s.suggestedById}&name=${encodeURIComponent(s.suggestedBy?.nickname || s.suggestedBy?.name || 'Member')}`}
+                            className="font-orbitron text-[10px] px-4 py-2 border border-purple-500/40 text-purple-300 hover:bg-purple-900/20 transition-all">
+                            OPEN CHAT
+                          </Link>
+                          <button onClick={() => decideSuggestion(s.id, 'approve')} disabled={!!reviewLoading}
+                            className="font-orbitron text-[10px] px-4 py-2 border border-green-500/40 text-green-400 hover:bg-green-900/20 transition-all disabled:opacity-50">
+                            {reviewLoading === s.id + ':approve' ? 'POSTING…' : 'APPROVE & POST'}
+                          </button>
+                          <button onClick={() => { const note = window.prompt('Reason for declining (optional):') || undefined; decideSuggestion(s.id, 'decline', note) }} disabled={!!reviewLoading}
+                            className="font-orbitron text-[10px] px-4 py-2 border border-red-500/40 text-red-400 hover:bg-red-900/20 transition-all disabled:opacity-50">
+                            DECLINE
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -1717,9 +1815,9 @@ export default function FounderDashboard() {
                     <h3 className="font-orbitron text-xs text-white tracking-widest uppercase mb-5">Payout Management</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       {[
-                        { label:'Pending', value:`$${(payouts.totalPending || 0).toFixed(2)}`, sub: `${payouts.pendingCount || 0} quest(s)`, color:'text-yellow-400' },
-                        { label:'Paid Out', value:`$${(payouts.totalPaid || 0).toFixed(2)}`, sub: `${payouts.paidCount || 0} quest(s)`, color:'text-green-400' },
-                        { label:'Total Approved Value', value:`$${((payouts.totalPending || 0) + (payouts.totalPaid || 0)).toFixed(2)}`, sub: `${payouts.quests?.length || 0} quest(s)`, color:'text-purple-400' },
+                        { label:'Pending', value:`$${(payouts.totalPending || 0).toFixed(2)}`, sub: `${payouts.pendingCount || 0} claim(s)`, color:'text-yellow-400' },
+                        { label:'Paid Out', value:`$${(payouts.totalPaid || 0).toFixed(2)}`, sub: `${payouts.paidCount || 0} claim(s)`, color:'text-green-400' },
+                        { label:'Total Approved Value', value:`$${((payouts.totalPending || 0) + (payouts.totalPaid || 0)).toFixed(2)}`, sub: `${payouts.claims?.length || 0} claim(s)`, color:'text-purple-400' },
                       ].map(({label,value,sub,color}) => (
                         <div key={label} className="border border-purple-500/15 p-4 text-center">
                           <div className={`font-orbitron font-black text-2xl ${color}`}>{value}</div>
@@ -1731,28 +1829,28 @@ export default function FounderDashboard() {
                   </div>
 
                   <div className="bg-[#0d0017] border border-purple-500/15 p-4">
-                    <h4 className="font-orbitron text-xs text-purple-400 tracking-widest uppercase mb-3">Approved Quests With Cash Reward</h4>
-                    {(!payouts.quests || payouts.quests.length === 0) ? (
-                      <p className="font-rajdhani text-sm text-slate-600">No approved quests carry a cash reward yet.</p>
+                    <h4 className="font-orbitron text-xs text-purple-400 tracking-widest uppercase mb-3">Approved Claims With Cash Reward</h4>
+                    {(!payouts.claims || payouts.claims.length === 0) ? (
+                      <p className="font-rajdhani text-sm text-slate-600">No approved claims carry a cash reward yet.</p>
                     ) : (
                       <div className="flex flex-col gap-2">
-                        {payouts.quests.map((q: any) => (
-                          <div key={q.id} className="flex items-center justify-between gap-3 border border-purple-500/10 p-3">
+                        {payouts.claims.map((c: any) => (
+                          <div key={c.id} className="flex items-center justify-between gap-3 border border-purple-500/10 p-3">
                             <div className="min-w-0">
-                              <div className="font-rajdhani text-sm text-slate-200 truncate">{q.title}</div>
+                              <div className="font-rajdhani text-sm text-slate-200 truncate">{c.quest.title}</div>
                               <div className="font-orbitron text-[9px] text-slate-600 mt-0.5">
-                                {q.claimedBy?.nickname || q.claimedBy?.name || 'Unclaimed'} · reviewed {q.reviewedAt ? new Date(q.reviewedAt).toLocaleDateString() : '—'}
+                                {c.user?.nickname || c.user?.name || 'Unknown'} · reviewed {c.reviewedAt ? new Date(c.reviewedAt).toLocaleDateString() : '—'}
                               </div>
                             </div>
                             <div className="flex items-center gap-3 flex-shrink-0">
-                              <span className="font-orbitron font-black text-amber-300">${(q.cashReward || 0).toFixed(2)}</span>
-                              {q.payoutStatus === 'PAID' ? (
-                                <button onClick={() => setPayoutStatus(q.id, 'PENDING')}
+                              <span className="font-orbitron font-black text-amber-300">${(c.quest.cashReward || 0).toFixed(2)}</span>
+                              {c.payoutStatus === 'PAID' ? (
+                                <button onClick={() => setPayoutStatus(c.id, 'PENDING')}
                                   className="font-orbitron text-[9px] px-3 py-1.5 border border-green-500/40 text-green-400 hover:bg-green-900/20 transition-all whitespace-nowrap">
                                   PAID ✓
                                 </button>
                               ) : (
-                                <button onClick={() => setPayoutStatus(q.id, 'PAID')}
+                                <button onClick={() => setPayoutStatus(c.id, 'PAID')}
                                   className="font-orbitron text-[9px] px-3 py-1.5 border border-amber-500/40 text-amber-300 hover:bg-amber-900/20 transition-all whitespace-nowrap">
                                   MARK PAID
                                 </button>
