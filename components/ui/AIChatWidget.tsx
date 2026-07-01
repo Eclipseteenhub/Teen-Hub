@@ -137,6 +137,7 @@ export default function AIChatWidget() {
     MODERATOR: 4, COORDINATOR: 5, ADMIN: 6, FOUNDER: 7,
   }
   const canSuggest = !isFounder && ROLE_LEVEL[session?.user?.role || 'GUEST'] >= ROLE_LEVEL['ACCEPTED_MEMBER']
+  const isTrial = !isFounder && (session?.user?.role === 'TRIAL_MEMBER' || session?.user?.role === 'GUEST')
 
   return (
     <>
@@ -211,6 +212,14 @@ export default function AIChatWidget() {
                   )}
 
                   {/* Quest draft suggestion button — everyone else who's an accepted member */}
+                  {/* Locked hint for trial/guest members who see a quest draft */}
+                  {m.questDraft && isTrial && (
+                    <div className="mt-2 pt-2 border-t border-purple-500/20">
+                      <div className="font-orbitron text-[8px] text-slate-500 tracking-widest">QUEST SUGGESTION LOCKED</div>
+                      <p className="font-rajdhani text-[11px] text-slate-600 mt-1">Get accepted into the guild first to suggest quests to the Founder.</p>
+                    </div>
+                  )}
+
                   {m.questDraft && canSuggest && !m.suggestionSent && (
                     <div className="mt-2 pt-2 border-t border-purple-500/20">
                       <div className="font-orbitron text-[8px] text-purple-400 mb-1.5 tracking-widest">QUEST IDEA READY</div>

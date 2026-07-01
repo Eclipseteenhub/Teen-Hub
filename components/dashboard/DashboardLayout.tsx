@@ -311,7 +311,7 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
           <span className="font-rajdhani text-sm tracking-wide">Main Site</span>
         </Link>
         <button
-          onClick={() => signOut({ callbackUrl: '/' })}
+          onClick={() => signOut({ callbackUrl: typeof window !== 'undefined' ? window.location.origin + '/' : '/' })}
           className="flex items-center gap-3 px-3 py-2 text-slate-600 hover:text-red-400 transition-colors w-full text-left"
         >
           <span className="text-base">⏻</span>
@@ -321,7 +321,7 @@ export default function DashboardLayout({ children, title }: DashboardLayoutProp
             Signs out of the current session cleanly, then drops straight onto
             the admin/founder login form instead of the public landing page. */}
         <button
-          onClick={() => signOut({ callbackUrl: '/admin-login', redirect: true })}
+          onClick={() => signOut({ callbackUrl: typeof window !== 'undefined' ? window.location.origin + '/admin-login' : '/admin-login', redirect: true })}
           className="flex items-center gap-3 px-3 py-2 text-slate-800 hover:text-purple-500 transition-colors w-full text-left text-[10px] tracking-widest"
           title="Switch account"
         >

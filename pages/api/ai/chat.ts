@@ -137,11 +137,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const raw = await openRouterChat(messages, { maxTokens: 400 })
     const reply = raw?.trim() || 'SENTINEL returned an empty response. Try rephrasing your message.'
 
-    const questMatch = reply.match(/```quest\n([\s\S]*?)\n```/)
+    // Robust quest-block parser:
+    // - Matches ```quest or ```json fences (AI sometimes uses either)
+    // - Tolerates \r\n (Windows line endings from some models)
+    // - Strips leading/trailing whitespace before parsing
+    // - Tolerates trailing junk after the closing fence (e.g. "...")
+    const questMatch = reply.match(/```(?:quest|json)\r?\n([\s\S]*?)\r?\n```/)
     let questDraft = null
     if (questMatch) {
       try {
-        questDraft = JSON.parse(questMatch[1])
+        const rawJson = questMatch[1].trim().replace(/\.\.\.\s*$/, '')
+        questDraft = JSON.parse(rawJson)
       } catch { /* ignore malformed draft JSON */ }
     }
 

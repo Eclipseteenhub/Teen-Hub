@@ -48,7 +48,7 @@ export default function Navbar() {
             ))}
           </div>
 
-         
+
           {/* Desktop auth buttons */}
           <div className="hidden md:flex items-center gap-3">
             {session ? (
@@ -60,7 +60,7 @@ export default function Navbar() {
                   Dashboard
                 </Link>
                 <button
-                  onClick={() => signOut({ callbackUrl: '/' })}
+                  onClick={() => signOut({ callbackUrl: typeof window !== 'undefined' ? window.location.origin + '/' : '/' })}
                   className="border border-purple-500/40 text-purple-300 hover:border-purple-400 hover:text-white px-4 py-1.5 font-orbitron text-xs tracking-widest uppercase transition-all duration-200"
                 >
                   Log Out
@@ -96,7 +96,7 @@ export default function Navbar() {
                 Dashboard
               </Link>
               <button
-                onClick={() => { signOut({ callbackUrl: '/' }); setMenuOpen(false) }}
+                onClick={() => { signOut({ callbackUrl: typeof window !== 'undefined' ? window.location.origin + '/' : '/' }); setMenuOpen(false) }}
                 className="flex items-center gap-3 px-3 py-3 text-slate-500 hover:text-red-400 font-rajdhani font-semibold text-sm tracking-widest uppercase transition-colors text-left w-full"
               >
                 <span className="w-1 h-1 bg-slate-600 rotate-45 flex-shrink-0" />
@@ -168,7 +168,7 @@ export default function Navbar() {
                 Dashboard
               </Link>
               <button
-                onClick={() => { signOut({ callbackUrl: '/' }); setMenuOpen(false) }}
+                onClick={() => { signOut({ callbackUrl: typeof window !== 'undefined' ? window.location.origin + '/' : '/' }); setMenuOpen(false) }}
                 className="flex items-center gap-3 px-3 py-3 text-slate-500 hover:text-red-400 font-rajdhani font-semibold text-sm tracking-widest uppercase transition-colors text-left w-full"
               >
                 <span className="w-1 h-1 bg-slate-600 rotate-45 flex-shrink-0" />
